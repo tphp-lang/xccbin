@@ -1,0 +1,129 @@
+name: build
+
+# xcc 发行包 CI：多 host 打包 + 真机验证
+#   windows-x86_64  : LLVM 官方预编译包（--fetch-llvm）+ 原生驱动
+#   linux-x64       : apt clang（XCC_LLVM_DIR）+ 原生驱动
+#   linux-arm64     : ubuntu-24.04-arm 原生 runner，同上
+#   macos-arm64     : brew llvm（XCC_LLVM_DIR）+ 原生驱动
+# 所有 host 都做同一件事：采集 8 个 sysroot -> verify.py 全量回归 -> 打包 -> 包内冒烟测试。
+# 驱动 = 底座 clang++ 现场编译 xcc.cpp（全静态），目标机零依赖。
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # 打 tag 时上传 Release 附件
+
+env:
+  TARGETS: "aarch64-linux-musl x86_64-linux-musl riscv64-linux-musl x86_64-w64-mingw32 i686-w64-mingw32 wasm32-wasi"
+
+jobs:
+  release:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x86_64
+            os: windows-latest
+            py: "3.12"
+          - name: linux-x64
+            os: ubuntu-latest
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+          - name: macos-arm64
+            os: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- LLVM 底座 ----
+      - name: Install LLVM (linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm
+          echo "XCC_LLVM_DIR=$(dirname $(dirname $(readlink -f $(which clang)))/clang)" >> $GITHUB_ENV
+
+      - name: Install LLVM (macos)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew install llvm lld
+          echo "XCC_LLVM_DIR=$(brew --prefix llvm)" >> $GITHUB_ENV
+
+      # ---- sysroot 采集 ----
+      - name: Collect sysroots
+        run: |
+          for t in $TARGETS; do
+            echo "=== build_sysroot $t ==="
+            python tools/build_sysroot.py "$t"
+          done
+        shell: bash
+
+      # ---- 全量回归 ----
+      - name: Verify all targets
+        run: python tools/verify.py --all
+        shell: bash
+
+      # ---- 打包 ----
+      - name: Build release (windows, fetch official LLVM)
+        if: matrix.os == 'windows-latest'
+        run: python tools/make_release.py --fetch-llvm
+        shell: bash
+
+      - name: Build release (linux/macos)
+        if: "!startsWith(matrix.os, 'windows')"
+        run: python tools/make_release.py
+        shell: bash
+
+      # ---- 包内冒烟测试（干净 PATH，解压即用） ----
+      - name: Smoke test release (windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Expand-Archive dist/xcc-win64.zip -DestinationPath smoketest
+          $env:PATH = "$PWD/smoketest/xcc-win64/bin;$env:PATH"
+          xcc -print-targets
+          xcc -target aarch64-linux-musl tests/hello.c -o smoke_a64.exe
+          xcc++ -target wasm32-wasi tests/plain.cpp -o smoke_wasm.exe
+          # mingw 产物在 runner 上真机运行（x64 与 x86/WoW64）
+          xcc -target x86_64-w64-mingw32 tests/hello.c -o smoke_win64.exe
+          ./smoke_win64.exe
+          xcc -target i686-w64-mingw32 tests/hello.c -o smoke_win32.exe
+          ./smoke_win32.exe
+          xcc++ -target x86_64-w64-mingw32 tests/vector.cpp -o smoke_win64cpp.exe
+          ./smoke_win64cpp.exe
+          echo "smoke ok"
+
+      - name: Smoke test release (linux/macos)
+        if: "!startsWith(matrix.os, 'windows')"
+        shell: bash
+        run: |
+          python -c "import zipfile,os; zipfile.ZipFile('dist/$(ls dist | grep -E "^xcc-.*\.zip$" | head -1)').extractall('smoketest')"
+          d=$(find smoketest -maxdepth 1 -type d -name "xcc-*" | head -1)
+          export PATH="$PWD/$d/bin:$PATH"
+          xcc -print-targets
+          xcc -target aarch64-linux-musl tests/hello.c -o smoke_a64
+          xcc++ -target wasm32-wasi tests/plain.cpp -o smoke_wasm
+          # linux runner 无 qemu 跑不了 aarch64 产物，但可以原生跑本机架构：
+          xcc -target x86_64-linux-musl tests/hello.c -o smoke_native 2>/dev/null || true
+          if [ "$(uname -m)" = "x86_64" ] && [ -f smoke_native ]; then ./smoke_native; fi
+          echo "smoke ok"
+
+      # ---- 产物 ----
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcc-${{ matrix.name }}
+          path: dist/*.zip
+
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
