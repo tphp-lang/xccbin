@@ -31,7 +31,6 @@ jobs:
         include:
           - name: windows-x86_64
             os: windows-latest
-            cxx: "C:/msys64/clang64/bin/clang++.exe"
           - name: linux-x64
             os: ubuntu-latest
           - name: linux-arm64
@@ -69,11 +68,12 @@ jobs:
             mingw-w64-clang-x86_64-xz
 
       # ---- 编译 C++ 工具 ----
+      # Windows 走 msys2 shell：setup-msys2 把 clang64 装在 PATH 上，
+      # build-tools.sh 的 find_cxx() 用 command -v clang++ 取到，避免写死 C:\msys64 路径
+      # （默认 release:true 把 MSYS2 装到临时目录，C:\msys64\clang64 在 CI 上并不存在）。
       - name: Build C++ tools
         run: sh tools/build-tools.sh
-        shell: bash
-        env:
-          CXX: ${{ matrix.cxx }}
+        shell: msys2 {0}
 
       # ---- sysroot 采集（遵守 pins/*.json 锁定）----
       - name: Collect sysroots
