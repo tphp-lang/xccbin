@@ -31,12 +31,20 @@ jobs:
         include:
           - name: windows-x86_64
             os: windows-latest
+            ext: ".exe"
           - name: linux-x64
             os: ubuntu-latest
+            ext: ""
           - name: linux-arm64
             os: ubuntu-24.04-arm
+            ext: ""
           - name: macos-arm64
             os: macos-14
+            ext: ""
+
+    env:
+      # Windows 上 C++ 工具带 .exe 后缀，其余平台无后缀；统一用 $XCCEXT 引用
+      XCCEXT: ${{ matrix.ext }}
 
     steps:
       - uses: actions/checkout@v4
@@ -80,24 +88,24 @@ jobs:
         run: |
           for t in $TARGETS; do
             echo "=== xccsysroot $t ==="
-            ./build/xccsysroot "$t"
+            ./build/xccsysroot$XCCEXT "$t"
           done
         shell: bash
 
       # ---- 全量回归 ----
       - name: Verify all targets
-        run: ./build/xccverify --all
+        run: ./build/xccverify$XCCEXT --all
         shell: bash
 
       # ---- 打包（原生 C++ 构建器，替代旧 make_release.py）----
       - name: Build release (windows, fetch official LLVM)
         if: matrix.os == 'windows-latest'
-        run: ./build/xccrelease --fetch-llvm
+        run: ./build/xccrelease$XCCEXT --fetch-llvm
         shell: bash
 
       - name: Build release (linux/macos)
         if: "!startsWith(matrix.os, 'windows')"
-        run: ./build/xccrelease
+        run: ./build/xccrelease$XCCEXT
         shell: bash
 
       # ---- 包内冒烟测试（干净 PATH，解压即用） ----
