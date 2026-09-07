@@ -598,34 +598,23 @@ public:
         if (usize > 0 && usize <= (512ULL << 20)) {          // 超大文件不尝试压缩，直接 store
             compressed = deflate_stream(in, usize, raw, e.crc);
         }
-        if (!compressed) {
-            in.clear();
-            in.seekg(0);
-            e.method = 0;
-            e.crc = 0;
-            std::vector<char> chunk(1 << 20);
-            uint64_t left = usize;
-            while (left) {
-                size_t want = (size_t)std::min<uint64_t>(left, chunk.size());
-                in.read(chunk.data(), (std::streamsize)want);
-                std::streamsize got = in.gcount();
-                if (got <= 0) break;
-                e.crc = crc32(e.crc, reinterpret_cast<const Bytef*>(chunk.data()), (uInt)got);
-                f.write(chunk.data(), got);
-                left -= (uint64_t)got;
-            }
-            e.csize = e.usize = usize - left;
-            if (!f) return false;
-        } else if (raw.size() < usize) {
+        if (compressed && raw.size() < usize) {
             e.method = 8;
             e.usize = usize;
             e.csize = raw.size();
-            f.write(reinterpret_cast<const char*>(raw.data()), (std::streamsize)raw.size());
-        } else {                                            // 压了反而更大 → store
-            in.clear();
-            in.seekg(0);
+        } else {
             e.method = 0;
             e.crc = 0;
+            e.usize = e.csize = usize;
+        }
+        // 必须先写 local header 再写数据（缺了它整个 zip 都是坏的）
+        write_local_header(zname, e.method, dtime, ddate, e.crc,
+                           (uint32_t)e.csize, (uint32_t)e.usize);
+        if (e.method == 8) {
+            f.write(reinterpret_cast<const char*>(raw.data()), (std::streamsize)raw.size());
+        } else {
+            in.clear();
+            in.seekg(0);
             std::vector<char> chunk(1 << 20);
             uint64_t left = usize;
             while (left) {
@@ -638,9 +627,9 @@ public:
                 left -= (uint64_t)got;
             }
             e.csize = e.usize = usize - left;
-            if (!f) return false;
+            if (left || !f) return false;                    // 读不满 = 源文件异常，拒绝
         }
-        // 回填 local header 里的 crc / 大小（写完才知道）
+        // 回填 local header 里的 crc / 大小（store 的 crc 写完才知道）
         uint64_t pos = (uint64_t)f.tellp();
         f.seekp((std::streamoff)(e.offset + 14));
         put32(e.crc); put32((uint32_t)e.csize); put32((uint32_t)e.usize);
