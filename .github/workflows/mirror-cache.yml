@@ -1,0 +1,38 @@
+name: mirror-cache
+
+# 把 pins/*.json 锁定的 17 个源文件镜像到本仓库 Release（tag: sysroot-cache）。
+# 目的：CI 采集 sysroot 时从 GitHub CDN 拉自己仓库的资产（50~200MB/s），
+#       替代境外访问 aliyun mirror（常只有几百 KB/s）与 deb.debian.org。
+# 流程：tools/mirror_cache.py 下载锁定文件并逐个核对 pins 的 sha256
+#       （不符即失败，绝不镜像坏文件）→ 上传 Release 资产。
+# 幂等：资产同名自动替换；脚本对已匹配文件跳过下载，复跑零流量。
+# pins/*.json 的 url 切换在镜像 Release 存在之后单独提交，避免竞态。
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'pins/**'
+      - 'tools/mirror_cache.py'
+      - '.github/workflows/mirror-cache.yml'
+
+permissions:
+  contents: write   # 创建 Release 并上传资产
+
+jobs:
+  mirror:
+    name: mirror pinned downloads
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download pinned files (sha256 verified)
+        run: python3 tools/mirror_cache.py cache-mirror
+
+      - name: Upload to release sysroot-cache
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: sysroot-cache
+          name: sysroot 锁定下载镜像
+          body: pins/*.json 引用的源文件原样镜像（sha256 与锁定一致）。由 mirror-cache 工作流自动维护，勿手改。
+          files: cache-mirror/*
