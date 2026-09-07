@@ -530,22 +530,41 @@ static bool has_compiler_rt(const std::string& clang, const std::string& clang_t
 }
 
 static void ensure_wasm_builtins(const std::string& clang, const fs::path& sysroot) {
-    // clang 链接 wasm 时硬性要求资源目录里有 lib/wasm32-unknown-wasi/libclang_rt.builtins.a。
+    // clang 链接 wasm 时硬性要求资源目录里有 libclang_rt.builtins。
+    // 不同 clang 主版本资源目录布局不同：
+    //   clang >= 19 : <res>/lib/wasm32-unknown-wasi/libclang_rt.builtins.a
+    //   clang <= 18 : <res>/lib/wasi/libclang_rt.builtins-wasm32.a
+    // （如 CI ubuntu-24.04 默认 clang-18 即走 lib/wasi 布局）
     // sysroot 自带（采集器从 Debian builtins 包获取）；首次链接时落位一次即可。
+    // 一次安装到所有已知候选布局，覆盖 clang 14..22。
     ProcResult r = run_capture({clang, "-print-resource-dir"});
     if (!r.spawned) return;
     std::string res = r.out;
     while (!res.empty() && (res.back()=='\n'||res.back()=='\r'||res.back()==' ')) res.pop_back();
     if (res.empty()) return;
-    fs::path dst = upath(res) / "lib" / "wasm32-unknown-wasi" / "libclang_rt.builtins.a";
-    std::error_code ec;
-    if (fs::is_regular_file(dst, ec)) return;
     fs::path src = sysroot / "lib" / "wasm32-wasi" / "libclang_rt.builtins-wasm32.a";
+    std::error_code ec;
     if (!fs::is_regular_file(src, ec)) return;
-    fs::create_directories(dst.parent_path(), ec);
-    fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
-    if (!ec)
-        std::fprintf(stderr, "xcc: 已安装 wasm builtins -> %s\n", pathstr(dst).c_str());
+
+    // {资源目录子目录, 文件名} 候选（clang 跨版本布局差异）
+    static const char* dsts[][2] = {
+        {"lib/wasm32-unknown-wasi", "libclang_rt.builtins.a"},
+        {"lib/wasm32-unknown-wasi", "libclang_rt.builtins-wasm32.a"},
+        {"lib/wasi",                "libclang_rt.builtins-wasm32.a"},
+        {"lib/wasi",                "libclang_rt.builtins.a"},
+    };
+    int installed = 0;
+    for (auto& d : dsts) {
+        fs::path dst = upath(res) / d[0] / d[1];
+        if (fs::is_regular_file(dst, ec)) { installed++; continue; }
+        fs::create_directories(dst.parent_path(), ec);
+        if (ec) continue;
+        fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
+        if (!ec) installed++;
+    }
+    if (installed)
+        std::fprintf(stderr, "xcc: 已安装 wasm builtins -> %s (等资源目录布局)\n",
+                     pathstr(upath(res)).c_str());
 }
 
 // 头文件目录存在才注入 isystem
