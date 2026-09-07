@@ -143,9 +143,9 @@ struct Sha256 {
     size_t buflen = 0;
     uint64_t total = 0;
 
-    static uint32_t rr(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); }
+    static inline uint32_t rotr(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); }
 
-    void block(const uint8_t* p) {
+    void compress(const uint8_t* p) {
         static const uint32_t K[64] = {
             0x428a2f98u,0x71374491u,0xb5c0fbcfu,0xe9b5dba5u,0x3956c25bu,0x59f111f1u,0x923f82a4u,0xab1c5ed5u,
             0xd807aa98u,0x12835b01u,0x243185beu,0x550c7dc3u,0x72be5d74u,0x80deb1feu,0x9bdc06a7u,0xc19bf174u,
@@ -156,23 +156,26 @@ struct Sha256 {
             0x19a4c116u,0x1e376c08u,0x2748774cu,0x34b0bcb5u,0x391c0cb3u,0x4ed8aa4au,0x5b9cca4fu,0x682e6ff3u,
             0x748f82eeu,0x78a5636fu,0x84c87814u,0x8cc70208u,0x90befffau,0xa4506cebu,0xbef9a3f7u,0xc67178f2u};
         uint32_t w[64];
-        for (int i = 0; i < 16; i++)
-            w[i] = ((uint32_t)p[i*4] << 24) | ((uint32_t)p[i*4+1] << 16) |
-                   ((uint32_t)p[i*4+2] << 8) | (uint32_t)p[i*4+3];
+        for (int i = 0; i < 16; i++) {
+            w[i] = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+                   ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+            p += 4;
+        }
         for (int i = 16; i < 64; i++) {
-            uint32_t s0 = rr(w[i-15], 7) ^ rr(w[i-15], 18) ^ (w[i-15] >> 3);
-            uint32_t s1 = rr(w[i-2], 17) ^ rr(w[i-2], 19) ^ (w[i-2] >> 10);
+            uint32_t x15 = w[i-15], x2 = w[i-2];
+            uint32_t s0 = rotr(x15, 7) ^ rotr(x15, 18) ^ (x15 >> 3);
+            uint32_t s1 = rotr(x2, 17) ^ rotr(x2, 19) ^ (x2 >> 10);
             w[i] = w[i-16] + s0 + w[i-7] + s1;
         }
         uint32_t a = h[0], b = h[1], c = h[2], d = h[3],
                  e = h[4], f = h[5], g = h[6], hh = h[7];
         for (int i = 0; i < 64; i++) {
-            uint32_t S1 = rr(e, 6) ^ rr(e, 11) ^ rr(e, 25);
-            uint32_t ch = (e & f) ^ (~e & g);
+            uint32_t S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+            uint32_t ch = (e & f) ^ ((~e) & g);
             uint32_t t1 = hh + S1 + ch + K[i] + w[i];
-            uint32_t S0 = rr(a, 2) ^ rr(a, 13) ^ rr(a, 22);
-            uint32_t mj = (a & b) ^ (a & c) ^ (b & c);
-            uint32_t t2 = S0 + mj;
+            uint32_t S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+            uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+            uint32_t t2 = S0 + maj;
             hh = g; g = f; f = e; e = d + t1;
             d = c; c = b; b = a; a = t1 + t2;
         }
@@ -181,10 +184,10 @@ struct Sha256 {
     void update(const uint8_t* p, size_t n) {
         total += n;
         while (n) {
-            size_t take = std::min<size_t>(64 - buflen, n);
+            size_t take = (n < 64 - buflen) ? n : (64 - buflen);
             std::memcpy(buf + buflen, p, take);
             buflen += take; p += take; n -= take;
-            if (buflen == 64) { block(buf); buflen = 0; }
+            if (buflen == 64) { compress(buf); buflen = 0; }
         }
     }
     std::string hex() {
@@ -194,15 +197,16 @@ struct Sha256 {
         tail[tlen++] = 0x80;
         while (tlen % 64 != 56) tail[tlen++] = 0;
         uint64_t bits = total * 8;
-        for (int i = 7; i >= 0; i--) tail[tlen++] = (uint8_t)((bits >> (i * 8)) & 0xff);
-        for (size_t i = 0; i < tlen; i += 64) block(tail + i);
+        for (int i = 0; i < 8; i++) tail[tlen++] = (uint8_t)(bits >> (56 - i * 8));
+        for (size_t i = 0; i < tlen; i += 64) compress(tail + i);
         static const char* D = "0123456789abcdef";
         std::string out;
-        for (int i = 0; i < 8; i++)
-            for (int k = 3; k >= 0; k--) {
-                out += D[(h[i] >> (k * 4 + 4)) & 0xf];
-                out += D[(h[i] >> (k * 4)) & 0xf];
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 4; j++) {
+                uint32_t v = (h[i] >> (24 - j * 8)) & 0xff;
+                out += D[v >> 4]; out += D[v & 0xf];
             }
+        }
         return out;
     }
 };
@@ -727,24 +731,10 @@ static fs::path download(const std::string& url, const fs::path& dest, const std
     std::string fname = pathstr(dest.filename());
     PinItem* pin = key.empty() ? nullptr : pins.find(key);
 
-    auto sha_cached = [&]() -> std::string {
-        fs::path sidecar = upath(pathstr(dest) + ".sha256");
-        if (fs::is_regular_file(sidecar, ec)) {
-            std::ifstream sf(sidecar);
-            std::string v((std::istreambuf_iterator<char>(sf)), std::istreambuf_iterator<char>());
-            while (!v.empty() && (v.back() == '\n' || v.back() == '\r')) v.pop_back();
-            return v;
-        }
-        return "";
-    };
-
     if (fs::is_regular_file(dest, ec) && fs::file_size(dest, ec) > 0) {
-        std::string sha = sha_cached();
-        if (sha.empty() || sha.size() < 64) {
-            xlog("  校验缓存 " + fname + " ...");
-            sha = sha256_hex(read_file(dest));
-            std::ofstream(upath(pathstr(dest) + ".sha256")) << sha << "\n";
-        }
+        xlog("  校验缓存 " + fname + " ...");
+        std::string sha = sha256_hex(read_file(dest));   // 始终从文件实算，不信任旧 sidecar
+        std::ofstream(upath(pathstr(dest) + ".sha256")) << sha << "\n";
         sha = sha.substr(0, 64);
         if (pin && !pin->sha256.empty() && pin->sha256 != sha)
             die("缓存文件与锁定不符：" + fname + "\n  锁定 sha256 " + pin->sha256 +
@@ -752,6 +742,7 @@ static fs::path download(const std::string& url, const fs::path& dest, const std
         if (pin && pin->url != url)
             xlog("  注意：上游已有新版本（锁定 " + pin->version + " → 现有 " + version +
                  "），仍按锁定采集；--update 可跟上");
+        if (!key.empty()) { pins.set(key, url, fname, version, sha); pins_save(pins); }
         xlogf("缓存命中 %s%s", fname.c_str(), note.empty() ? "" : (" (" + note + ")").c_str());
         return dest;
     }

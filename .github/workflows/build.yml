@@ -31,7 +31,6 @@ jobs:
         include:
           - name: windows-x86_64
             os: windows-latest
-            py: "3.12"
             cxx: "C:/msys64/clang64/bin/clang++.exe"
           - name: linux-x64
             os: ubuntu-latest
@@ -90,15 +89,15 @@ jobs:
         run: ./build/xccverify --all
         shell: bash
 
-      # ---- 打包 ----
+      # ---- 打包（原生 C++ 构建器，替代旧 make_release.py）----
       - name: Build release (windows, fetch official LLVM)
         if: matrix.os == 'windows-latest'
-        run: python tools/make_release.py --fetch-llvm
+        run: ./build/xccrelease --fetch-llvm
         shell: bash
 
       - name: Build release (linux/macos)
         if: "!startsWith(matrix.os, 'windows')"
-        run: python tools/make_release.py
+        run: ./build/xccrelease
         shell: bash
 
       # ---- 包内冒烟测试（干净 PATH，解压即用） ----

@@ -19,8 +19,8 @@
 //   4) 复制/写入失败会累计并报错，绝不静默产出残缺包
 //
 // 编译：
-//   Windows (MSYS2 clang64): clang++ -std=c++17 -O2 -o xccrelease.exe xccrelease.cpp -lwinhttp -lz
-//   Linux/macOS            : clang++ -std=c++17 -O2 -o xccrelease      xccrelease.cpp -lcurl -lz -pthread
+//   Windows (MSYS2 clang64): clang++ -std=c++17 -O2 -o xccrelease.exe xccrelease.cpp -lwinhttp -lz -llzma
+//   Linux/macOS            : clang++ -std=c++17 -O2 -o xccrelease      xccrelease.cpp -lcurl -lz -llzma -pthread
 
 #include <algorithm>
 #include <chrono>

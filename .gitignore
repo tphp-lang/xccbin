@@ -7,7 +7,7 @@ cache/
 # 构建中间产物与解包暂存区
 build/
 
-# sysroot 采集结果（由 tools/build_sysroot.py 生成，可随时重建）
+# sysroot 采集结果（由 tools/xccsysroot.cpp 采集生成，可随时重建；pins/ 已锁定版本）
 sysroot/
 
 # 打包产物

@@ -32,6 +32,8 @@ case "$(uname -s)" in
         "$CXX_BIN" -std=c++17 -O2 -o build/xccsysroot.exe tools/xccsysroot.cpp \
             -lwinhttp -lz -llzma
         "$CXX_BIN" -std=c++17 -O2 -o build/xccverify.exe tools/xccverify.cpp
+        "$CXX_BIN" -std=c++17 -O2 -o build/xccrelease.exe tools/xccrelease.cpp \
+            -lwinhttp -lz -llzma
         ;;
     Darwin)
         XZ_PREFIX="$(brew --prefix xz 2>/dev/null || true)"
@@ -43,11 +45,15 @@ case "$(uname -s)" in
         "$CXX_BIN" -std=c++17 -O2 $XZ_FLAGS -o build/xccsysroot tools/xccsysroot.cpp \
             -lcurl -lz -llzma
         "$CXX_BIN" -std=c++17 -O2 -o build/xccverify tools/xccverify.cpp -pthread
+        "$CXX_BIN" -std=c++17 -O2 $XZ_FLAGS -o build/xccrelease tools/xccrelease.cpp \
+            -lcurl -lz -llzma -pthread
         ;;
     *)
         "$CXX_BIN" -std=c++17 -O2 -o build/xccsysroot tools/xccsysroot.cpp \
             -lcurl -lz -llzma
         "$CXX_BIN" -std=c++17 -O2 -o build/xccverify tools/xccverify.cpp -pthread
+        "$CXX_BIN" -std=c++17 -O2 -o build/xccrelease tools/xccrelease.cpp \
+            -lcurl -lz -llzma -pthread
         ;;
 esac
 

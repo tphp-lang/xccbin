@@ -35,13 +35,13 @@ xcc.cpp              原生驱动（单文件 C++17，全静态编译）
 tools/
   xccsysroot.cpp     sysroot 采集器（单文件 C++17：自实现 ar/tar 解析 + zlib/lzma 解压）
   xccverify.cpp      产物验证器（单文件 C++17：架构/静态自洽/指令集/C++ 符号/PE 真机运行）
-  build-tools.sh     编译 C++ 工具（build/xccsysroot + build/xccverify）
-  make_release.py    打包脚本（底座 clang++ 编译驱动 + LLVM 底座 + sysroot + zip）
+  build-tools.sh     编译 C++ 工具（build/xccsysroot + build/xccverify + build/xccrelease）
+  xccrelease.cpp     发行包构建器（原生 C++17，替代 make_release.py；CI 实际打包用）
   probe_alpine.py    Alpine 仓库索引探测
-pins/<target>.json   采集锁定（确切 URL + 版本 + sha256，进 git）
-sysroot/<target>/    已采集 sysroot（含 xcc.json manifest）
+pins/<target>.json   采集锁定（确切 URL + 版本 + sha256，**进 git**；当前 4 个 target 各一份）
+sysroot/<target>/    已采集 sysroot（含 xcc.json manifest；**gitignored，由 pins + xccsysroot 重建**）
 tests/               hello.c / vector.cpp / plain.cpp 测试样例
-dist/xcc-<host>.zip  自包含发行包
+dist/xcc-<host>.zip  自包含发行包（**gitignored，由 xccrelease 生成**）
 cache/               下载缓存（不进 git）
 ```
 
@@ -101,7 +101,7 @@ sh tools/build-tools.sh              # 编译 C++ 采集器 -> build/xccsysroot
 2. `xcc.cpp` 的 `TARGETS` 加一行
 3. `./build/xccsysroot <target>` 采集（自动生成 `pins/<target>.json`，请随代码一起提交）
 4. `./build/xccverify --all` 全量回归
-5. `python tools/make_release.py` 重打包
+5. `./build/xccrelease` 重打包（CI 同款原生构建器；Windows 可加 `--fetch-llvm` 拉官方 LLVM）
 
 ## 验证哲学
 
@@ -132,8 +132,9 @@ push tag `v*` 时各 host 的 zip 自动挂到 GitHub Release。
 ## 已知边界
 
 - 底座 clang 随包分发（Windows 为官方包，Linux/macOS 为发行版包）
-- **采集器与验证器已 C++ 化**：`tools/xccsysroot.cpp`、`tools/xccverify.cpp` 均为单文件、
-  无 Python 依赖；`make_release.py` / `probe_alpine.py` 仍是 Python，后续迁移
+- **构建链路已 C++ 化**：`tools/xccsysroot.cpp`、`tools/xccverify.cpp`、`tools/xccrelease.cpp`
+  均为单文件、无 Python 依赖；仅 `probe_alpine.py` 仍是 Python（仓库索引探测，非打包必需）
+- 打包器 `xccrelease` 已接入 `build.yml` 完全取代旧 `make_release.py`（后者已废弃，待删除）
 - 采集器解压 gzip/xz 用 zlib/liblzma；`.zst`（Debian 的 data.tar.zst）默认调外部
   `zstd -dc`，没装会明确报错，也可用 `-DXCC_USE_LIBZSTD -lzstd` 静态链
 - 非 Windows target 缺 compiler-rt builtins 时自动回退 `-rtlib=libgcc -unwindlib=libgcc`；
