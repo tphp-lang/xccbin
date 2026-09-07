@@ -79,9 +79,16 @@ jobs:
       # Windows 走 msys2 shell：setup-msys2 把 clang64 装在 PATH 上，
       # build-tools.sh 的 find_cxx() 用 command -v clang++ 取到，避免写死 C:\msys64 路径
       # （默认 release:true 把 MSYS2 装到临时目录，C:\msys64\clang64 在 CI 上并不存在）。
-      - name: Build C++ tools
+      # linux/macos 用 bash：apt/brew 装的 clang 本就在 PATH 上，且那些 runner 没注册 msys2 shell。
+      - name: Build C++ tools (windows, msys2 shell)
+        if: matrix.os == 'windows-latest'
         run: sh tools/build-tools.sh
         shell: msys2 {0}
+
+      - name: Build C++ tools (linux/macos)
+        if: "!startsWith(matrix.os, 'windows')"
+        run: sh tools/build-tools.sh
+        shell: bash
 
       # ---- sysroot 采集（遵守 pins/*.json 锁定）----
       - name: Collect sysroots
