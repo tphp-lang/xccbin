@@ -563,7 +563,15 @@ static void ensure_wasm_builtins(const std::string& clang, const fs::path& sysro
     if (res.empty()) return;
     fs::path src = sysroot / "lib" / "wasm32-wasi" / "libclang_rt.builtins-wasm32.a";
     std::error_code ec;
-    if (!fs::is_regular_file(src, ec)) return;
+    if (!fs::is_regular_file(src, ec)) {
+        // 边界显式报错而非静默跳过：sysroot 采集不完整时 wasm 链接必失败，
+        // 提前把原因说清楚，别让用户去啃 wasm-ld 的 cannot open 报错。
+        std::fprintf(stderr,
+                     "xcc: 警告: sysroot 缺 wasm builtins: %s\n"
+                     "xcc: wasm 链接将失败，请重新运行 xccsysroot wasm32-wasi 采集。\n",
+                     pathstr(src).c_str());
+        return;
+    }
 
     // {资源目录子目录, 文件名} 候选（clang 跨版本布局差异）
     static const char* dsts[][2] = {
@@ -581,9 +589,19 @@ static void ensure_wasm_builtins(const std::string& clang, const fs::path& sysro
         fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
         if (!ec) installed++;
     }
-    if (installed)
+    if (installed) {
         std::fprintf(stderr, "xcc: 已安装 wasm builtins -> %s (等资源目录布局)\n",
                      pathstr(upath(res)).c_str());
+    } else {
+        // 资源目录不可写（如 Linux 系统级 apt llvm 为 root 所有，当前用户非 root）：
+        // 静默跳过会让用户只看到 wasm-ld 的 cannot open，原因完全不可见。
+        std::fprintf(stderr,
+                     "xcc: 警告: 无法把 wasm builtins 写入 clang 资源目录 %s（权限不足）。\n"
+                     "xcc: wasm 链接将失败。请放开写权限（如 chmod -R a+w %s）或手动复制 %s\n"
+                     "xcc: 到资源目录的 lib/wasi/ 布局。\n",
+                     pathstr(upath(res)).c_str(), pathstr(upath(res)).c_str(),
+                     pathstr(src).c_str());
+    }
 }
 
 // 头文件目录存在才注入 isystem

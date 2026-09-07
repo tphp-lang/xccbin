@@ -47,6 +47,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang lld llvm libcurl4-openssl-dev zlib1g-dev liblzma-dev zstd
+          # apt llvm 资源目录归 root；ensure_wasm_builtins 需要把 wasm builtins
+          # 落位到资源目录（驱动持有跨版本 4 布局知识，不放 CI 重复）。
+          # CI 是一次性环境，放开写权限无安全顾虑。
+          sudo chmod -R a+w "$(clang -print-resource-dir)"
           echo "XCC_LLVM_DIR=$(dirname $(dirname $(readlink -f $(which clang)))/clang)" >> $GITHUB_ENV
 
       - name: Install LLVM (macos)
