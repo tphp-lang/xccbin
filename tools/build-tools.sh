@@ -29,10 +29,13 @@ echo "[build] C++ = $CXX_BIN"
 
 case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*)
-        "$CXX_BIN" -std=c++17 -O2 -o build/xccsysroot.exe tools/xccsysroot.cpp \
+        # -static：把 zlib/liblzma 链成静态，exe 自带、不依赖 msys2 的 libz.dll/liblzma.dll；
+        # 这样 Collect/Verify/Release 在 Git Bash（无 msys2 PATH）也能直接跑。
+        # winhttp 是系统 DLL，仍动态链接（无需 PATH）。
+        "$CXX_BIN" -std=c++17 -O2 -static -o build/xccsysroot.exe tools/xccsysroot.cpp \
             -lwinhttp -lz -llzma
-        "$CXX_BIN" -std=c++17 -O2 -o build/xccverify.exe tools/xccverify.cpp
-        "$CXX_BIN" -std=c++17 -O2 -o build/xccrelease.exe tools/xccrelease.cpp \
+        "$CXX_BIN" -std=c++17 -O2 -static -o build/xccverify.exe tools/xccverify.cpp
+        "$CXX_BIN" -std=c++17 -O2 -static -o build/xccrelease.exe tools/xccrelease.cpp \
             -lwinhttp -lz -llzma
         ;;
     Darwin)

@@ -31,20 +31,12 @@ jobs:
         include:
           - name: windows-x86_64
             os: windows-latest
-            ext: ".exe"
           - name: linux-x64
             os: ubuntu-latest
-            ext: ""
           - name: linux-arm64
             os: ubuntu-24.04-arm
-            ext: ""
           - name: macos-arm64
             os: macos-14
-            ext: ""
-
-    env:
-      # Windows 上 C++ 工具带 .exe 后缀，其余平台无后缀；统一用 $XCCEXT 引用
-      XCCEXT: ${{ matrix.ext }}
 
     steps:
       - uses: actions/checkout@v4
@@ -91,28 +83,37 @@ jobs:
         shell: bash
 
       # ---- sysroot 采集（遵守 pins/*.json 锁定）----
+      # 二进制名探测：windows 上是 build/xccsysroot.exe（MINGW 产出），其余平台无后缀。
+      # 显式相对路径不触发 msys2 的 .exe 自动补全，故这里实测后缀，避免 127。
       - name: Collect sysroots
         run: |
+          B=./build/xccsysroot; [ -x "$B.exe" ] && B="$B.exe"
           for t in $TARGETS; do
             echo "=== xccsysroot $t ==="
-            ./build/xccsysroot$XCCEXT "$t"
+            "$B" "$t"
           done
         shell: bash
 
       # ---- 全量回归 ----
       - name: Verify all targets
-        run: ./build/xccverify$XCCEXT --all
+        run: |
+          B=./build/xccverify; [ -x "$B.exe" ] && B="$B.exe"
+          "$B" --all
         shell: bash
 
       # ---- 打包（原生 C++ 构建器，替代旧 make_release.py）----
       - name: Build release (windows, fetch official LLVM)
         if: matrix.os == 'windows-latest'
-        run: ./build/xccrelease$XCCEXT --fetch-llvm
+        run: |
+          B=./build/xccrelease; [ -x "$B.exe" ] && B="$B.exe"
+          "$B" --fetch-llvm
         shell: bash
 
       - name: Build release (linux/macos)
         if: "!startsWith(matrix.os, 'windows')"
-        run: ./build/xccrelease$XCCEXT
+        run: |
+          B=./build/xccrelease; [ -x "$B.exe" ] && B="$B.exe"
+          "$B"
         shell: bash
 
       # ---- 包内冒烟测试（干净 PATH，解压即用） ----
