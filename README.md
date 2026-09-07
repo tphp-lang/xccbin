@@ -4,18 +4,18 @@
 
 ```
 xcc   -target aarch64-linux-musl  hello.c   -o hello
-xcc++ -target x86_64-w64-mingw32  vector.cpp -o vector.exe
+xcc++ -target x86_64-linux-musl   vector.cpp -o vector
 xcc   -target wasm32-wasi         hello.c   -o hello.wasm
 ```
 
 ## 特性
 
-- **6 个 target**：aarch64/x86_64/riscv64 × linux-musl（全静态）、x86_64/i686 × windows-mingw、wasm32-wasi
-- **C 与 C++**：libstdc++（ELF/PE）/ libc++（wasm）随 sysroot 分发；wasm 的 C++ 为 no-exceptions 语义（与 wasi-sdk 官方 libc++abi 一致）
+- **4 个 target**：aarch64/x86_64/riscv64 × linux-musl（全静态）、wasm32-wasi
+- **C 与 C++**：libstdc++（ELF）/ libc++（wasm）随 sysroot 分发；wasm 的 C++ 为 no-exceptions 语义（与 wasi-sdk 官方 libc++abi 一致）
 - **原生驱动**：`xcc.cpp` 单文件 C++17，全静态编译约 900KB；argv[0] 多路复用出 `xcc` / `xcc++` / `xcc-ar` / `xcc-nm` / `xcc-objcopy` / `xcc-strip` / `xcc-ranlib` 等全部角色
 - **开箱即用**：发行包自带 clang/lld/llvm-binutils + 全部 sysroot，解压即用，不依赖宿主环境
-- **静态优先**：musl 目标默认 `-static`，产出完全静态 ELF，扔到任何同架构 Linux 都能跑；mingw 产物动态链系统 msvcrt.dll（Windows 自带），libgcc/libstdc++ 静态不拖 DLL
-- **CI 多 host 打包**：`.github/workflows/build.yml` 矩阵产出 win64 / linux-x64 / linux-arm64 / macos-arm64 四种发行包，每个 host 都跑全量回归 + 包内冒烟（Windows 上 mingw 产物直接真机运行）
+- **静态优先**：musl 目标默认 `-static`，产出完全静态 ELF，扔到任何同架构 Linux 都能跑
+- **CI 多 host 打包**：`.github/workflows/build.yml` 矩阵产出 win64 / linux-x64 / linux-arm64 / macos-arm64 四种发行包，每个 host 都跑全量回归 + 包内冒烟
 
 ## 支持矩阵
 
@@ -24,8 +24,6 @@ xcc   -target wasm32-wasi         hello.c   -o hello.wasm
 | `x86_64-linux-musl` | 静态 ELF64 | `-static` | 43 MB |
 | `aarch64-linux-musl` | 静态 ELF64 | `-static` | 45 MB |
 | `riscv64-linux-musl` | 静态 ELF64 | `-static` | 70 MB |
-| `x86_64-w64-mingw32` | PE64 exe | 动态 msvcrt + 静态 libgcc/libstdc++ | 365 MB |
-| `i686-w64-mingw32` | PE32 exe | 同上 | ~300 MB |
 | `wasm32-wasi` | wasm32 模块 | 静态 | 86 MB |
 
 任意 host（win/linux/macos）的发行包都能编译以上全部目标。
@@ -35,10 +33,12 @@ xcc   -target wasm32-wasi         hello.c   -o hello.wasm
 ```
 xcc.cpp              原生驱动（单文件 C++17，全静态编译）
 tools/
-  build_sysroot.py   sysroot 采集器（Debian deb / Alpine apk / wasi-sdk tarball，纯 Python 解包）
+  xccsysroot.cpp     sysroot 采集器（单文件 C++17：自实现 ar/tar 解析 + zlib/lzma 解压）
+  xccverify.cpp      产物验证器（单文件 C++17：架构/静态自洽/指令集/C++ 符号/PE 真机运行）
+  build-tools.sh     编译 C++ 工具（build/xccsysroot + build/xccverify）
   make_release.py    打包脚本（底座 clang++ 编译驱动 + LLVM 底座 + sysroot + zip）
-  verify.py          真实验证（ELF/PE/WASM 架构判定、静态自洽、指令集嗅探、C++ 符号、PE 真机运行）
   probe_alpine.py    Alpine 仓库索引探测
+pins/<target>.json   采集锁定（确切 URL + 版本 + sha256，进 git）
 sysroot/<target>/    已采集 sysroot（含 xcc.json manifest）
 tests/               hello.c / vector.cpp / plain.cpp 测试样例
 dist/xcc-<host>.zip  自包含发行包
@@ -50,7 +50,6 @@ cache/               下载缓存（不进 git）
 | target 家族 | 头文件/libc | gcc 运行时 | C++ |
 |---|---|---|---|
 | `*-linux-musl` | Alpine `musl-dev` `musl` | Alpine `libgcc-static` `gcc`(crtbegin/eh) | Alpine `libstdc++-dev` |
-| `*-w64-mingw32` | Debian `mingw-w64-common` + `mingw-w64-<arch>-dev` | Debian `gcc-mingw-w64-<arch>-posix` | Debian `g++-mingw-w64-<arch>-posix` |
 | `wasm32-wasi` | wasi-sdk `wasi-sysroot-25.0` 官方预编译 | Debian `libclang-rt-22-dev-wasm32`(builtins ~100KB) | sysroot 自带 `libc++.a`/`libc++abi.a` |
 
 镜像：Debian 走 `deb.debian.org`，Alpine 走 `mirrors.aliyun.com`，GitHub 走 `gh-proxy.com` 加速（可回退直连）。
@@ -62,7 +61,7 @@ cache/               下载缓存（不进 git）
 xcc -target aarch64-linux-musl hello.c -o hello
 
 # C++（驱动模式由 argv[0] 或 --role 决定）
-xcc++ -target x86_64-w64-mingw32 vector.cpp -o vector.exe
+xcc++ -target x86_64-linux-musl vector.cpp -o vector
 xcc --role=c++ -target wasm32-wasi vector.cpp -o vector.wasm
 
 # binutils
@@ -77,19 +76,45 @@ xcc --version
 
 环境变量：`XCC_TARGET`（默认 target）、`XCC_DEBUG=1`（打印底层 clang 命令）。
 
+## sysroot 采集与版本锁定
+
+```
+sh tools/build-tools.sh              # 编译 C++ 采集器 -> build/xccsysroot
+./build/xccsysroot --list            # 查看 target 与采集状态
+./build/xccsysroot x86_64-linux-musl # 采集（遵守 pins/ 锁定）
+./build/xccsysroot --all             # 全部采集
+./build/xccsysroot <t> --update      # 跟上上游新版本并刷新锁定
+```
+
+上游（Alpine / Debian 仓库、wasi-sdk 发布）一直在滚动。若不钉死，同一份代码今天和
+下个月采集出的 sysroot 会不一样，排查问题时无从对照。所以每个 target 都有一份
+`pins/<target>.json`（进 git），记录每个下载件的**确切 URL、版本与 sha256**：
+
+- 有锁时直接用锁定文件名下载，不再"挑最新"；下载完强制校验 sha256
+- 缓存命中同样校验（旧行为只看"文件存在且非空"）
+- 上游变更导致 URL 或校验和对不上就**报错退出**，绝不静默产出不同的 sysroot；
+  确认无误后用 `--update` 刷新锁定
+
 ## 新增 target 步骤
 
-1. `tools/build_sysroot.py` 的 `RECIPES` 加一行（alpine/deb 架构 + triplet + family）
+1. `tools/xccsysroot.cpp` 的 `RECIPES` 加一行（alpine/deb 架构 + triplet + family）
 2. `xcc.cpp` 的 `TARGETS` 加一行
-3. `python tools/build_sysroot.py <target>` 采集
-4. `python tools/verify.py --all` 全量回归
-5. `tools/make_release.py` 重打包
+3. `./build/xccsysroot <target>` 采集（自动生成 `pins/<target>.json`，请随代码一起提交）
+4. `./build/xccverify --all` 全量回归
+5. `python tools/make_release.py` 重打包
 
 ## 验证哲学
 
-不做"声称成功"：`verify.py` 用 llvm-readobj/nm/objdump 检查产物架构
-（ELF Machine / PE IMAGE_FILE_MACHINE / WASM Format）、静态自洽（强未定义符号为零）、
-目标指令集嗅探、C++ 运行时符号；mingw 产物在 Windows 宿主上直接真机运行。
+不做"声称成功"：`xccverify` 用 llvm-readobj/nm/objdump 检查产物架构
+（ELF Machine / WASM Format）、静态自洽（强未定义符号为零）、
+目标指令集嗅探、C++ 运行时符号。
+
+```
+./build/xccverify --all                          # 编译 tests/ 样例并验证所有已采集 target
+./build/xccverify x86_64-linux-musl build/hello  # 验证既有产物
+```
+
+所有子进程带超时（工具 120s），超时强杀，不会让 CI 挂死。
 
 ## CI 打包
 
@@ -107,6 +132,10 @@ push tag `v*` 时各 host 的 zip 自动挂到 GitHub Release。
 ## 已知边界
 
 - 底座 clang 随包分发（Windows 为官方包，Linux/macOS 为发行版包）
+- **采集器与验证器已 C++ 化**：`tools/xccsysroot.cpp`、`tools/xccverify.cpp` 均为单文件、
+  无 Python 依赖；`make_release.py` / `probe_alpine.py` 仍是 Python，后续迁移
+- 采集器解压 gzip/xz 用 zlib/liblzma；`.zst`（Debian 的 data.tar.zst）默认调外部
+  `zstd -dc`，没装会明确报错，也可用 `-DXCC_USE_LIBZSTD -lzstd` 静态链
 - 非 Windows target 缺 compiler-rt builtins 时自动回退 `-rtlib=libgcc -unwindlib=libgcc`；
   wasm builtins 由采集器放进 sysroot、打包时预置进 clang 资源目录
 - **wasm C++ 为 no-exceptions 语义**：wasi-sdk 官方 libc++abi 即 no-exception 构建，

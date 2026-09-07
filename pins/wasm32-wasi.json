@@ -1,0 +1,7 @@
+{
+  "branch": "latest-stable",
+  "items": [
+    {"key": "wasi-sysroot", "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-25/wasi-sysroot-25.0.tar.gz", "file": "wasi-sysroot-25.0.tar.gz", "version": "wasi-sdk-25", "sha256": "c6622cc1cddddfff2ffdddd830011009e3366113bcc99aacbdd11bb294422bbb"},
+    {"key": "wasm-builtins", "url": "https://deb.debian.org/debian/pool/main/l/llvm-toolchain-22/libclang-rt-22-dev-wasm32_22.1.8-1~deb13u4_all.deb", "file": "libclang-rt-22-dev-wasm32_22.1.8-1~deb13u4_all.deb", "version": "", "sha256": "0669944c1eeff6644eeee44b0ee336641aabbbbdb66ee5588aaaacca70011dda"}
+  ]
+}

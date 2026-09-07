@@ -311,12 +311,11 @@ def make_release(fetch_llvm_flag=False, llvm_dir=None):
         "xcc — 多平台 C/C++ 交叉编译工具链（开箱即用）\n\n"
         "用法（bin/ 已在 PATH 内）：\n"
         "  xcc   -target aarch64-linux-musl  hello.c   -o hello\n"
-        "  xcc   -target x86_64-w64-mingw32  hello.c   -o hello.exe\n"
-        "  xcc++ -target x86_64-w64-mingw32  hello.cpp -o hello.exe\n"
+        "  xcc++ -target x86_64-linux-musl   hello.cpp -o hello\n"
         "  xcc   -target wasm32-wasi         hello.c   -o hello.wasm\n"
         "  xcc -print-targets\n\n"
         "支持: aarch64/x86_64/riscv64 x linux-musl(全静态),\n"
-        "      x86_64/i686 x windows(mingw), wasm32-wasi\n")
+        "      wasm32-wasi\n")
 
     zip_path = dist / ("xcc-%s.zip" % tag)
     if zip_path.exists():

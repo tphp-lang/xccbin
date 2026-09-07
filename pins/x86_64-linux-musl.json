@@ -1,0 +1,10 @@
+{
+  "branch": "latest-stable",
+  "items": [
+    {"key": "musl-dev", "url": "https://mirrors.aliyun.com/alpine/latest-stable/main/x86_64/musl-dev-1.2.6-r2.apk", "file": "x86_64-musl-dev-1.2.6-r2.apk", "version": "1.2.6-r2", "sha256": "1ee88bb9211ddaae12211ff0f8811ee54aacc22714444cc498800eee6998888f"},
+    {"key": "musl", "url": "https://mirrors.aliyun.com/alpine/latest-stable/main/x86_64/musl-1.2.6-r2.apk", "file": "x86_64-musl-1.2.6-r2.apk", "version": "1.2.6-r2", "sha256": "71122ee2c1155bbfa22669994aaccddfc7777227155ee77376688005e00ee771"},
+    {"key": "libstdc++-dev", "url": "https://mirrors.aliyun.com/alpine/latest-stable/main/x86_64/libstdc++-dev-15.2.0-r5.apk", "file": "x86_64-libstdc++-dev-15.2.0-r5.apk", "version": "15.2.0-r5", "sha256": "e330088c12277ddceeeee1154ffffeec988bb330655339902ffee44c900bb443"},
+    {"key": "libgcc-static", "url": "https://mirrors.aliyun.com/alpine/latest-stable/main/x86_64/libgcc-static-15.2.0-r5.apk", "file": "x86_64-libgcc-static-15.2.0-r5.apk", "version": "15.2.0-r5", "sha256": "24444aa55cc4488bf77ff00b711ee337cbbaa665fee22dd42cc55ff9388bbccd"},
+    {"key": "gcc", "url": "https://mirrors.aliyun.com/alpine/latest-stable/main/x86_64/gcc-15.2.0-r5.apk", "file": "x86_64-gcc-15.2.0-r5.apk", "version": "15.2.0-r5", "sha256": "4882244791122440c6600ddb17766bbc2ee11ddf4885566d599ff66d16633225"}
+  ]
+}

@@ -377,8 +377,8 @@ static Manifest load_manifest(const fs::path& sysroot) {
 // target 定义表
 //
 //   clang  : 传给 clang 的 --target 字符串
-//   family : musl / glibc / windows / wasi
-//   statik : 默认全静态（musl 招牌能力；windows 家族默认动态链 msvcrt）
+//   family : musl / wasi（windows/mingw 家族已移除）
+//   statik : 默认全静态（musl 招牌能力；wasi 天然全静态）
 //   pie    : 默认生成 PIE
 // --------------------------------------------------------------------------
 struct TargetSpec {
@@ -393,8 +393,6 @@ static const TargetSpec TARGETS[] = {
     {"aarch64-linux-musl",  "aarch64-linux-musl",  "musl",    true,  false},
     {"x86_64-linux-musl",   "x86_64-linux-musl",   "musl",    true,  false},
     {"riscv64-linux-musl",  "riscv64-linux-musl",  "musl",    true,  false},
-    {"x86_64-w64-mingw32",  "x86_64-w64-mingw32",  "windows", false, false},
-    {"i686-w64-mingw32",    "i686-w64-mingw32",    "windows", false, false},
     {"wasm32-wasi",         "wasm32-wasi",         "wasi",    true,  false},
 };
 
@@ -584,7 +582,7 @@ static std::vector<std::string> build_command(const std::string& role,
     std::error_code ec;
     if (!fs::is_directory(sysroot, ec))
         die("target '" + target_name + "' 的 sysroot 未采集：" + pathstr(sysroot) +
-            "\n请先运行 tools/build_sysroot.py " + target_name);
+            "\n请先运行 ./build/xccsysroot " + target_name);
 
     Manifest mf = load_manifest(sysroot);
     std::string family = spec->family;
@@ -594,7 +592,7 @@ static std::vector<std::string> build_command(const std::string& role,
     // C++ 标准库：
     //   wasi  用自带 libc++（no-exceptions 构建，用户代码须 -fno-exceptions）；
     //   glibc 走 Debian 标准布局，clang 的 GCCInstallationDetector 自动找 libstdc++；
-    //   musl / mingw 显式注入 sysroot 内的 C++ 头（manifest.cxx_autodetect=false）。
+    //   musl 显式注入 sysroot 内的 C++ 头（manifest.cxx_autodetect=false）。
     if (role == "c++") {
         if (family == "wasi") {
             cmd.push_back("-stdlib=libc++");
@@ -639,29 +637,13 @@ static std::vector<std::string> build_command(const std::string& role,
                 }
             }
         }
-        // windows 家族：clang 的 MinGW 工具链探测自动接 libgcc；默认动态链
-        // msvcrt.dll（系统自带），libgcc/libstdc++ 默认静态以免拖 DLL。
-        // 另：MSYS2 宿主 clang 的默认 unwindlib 是 libunwind，交叉 mingw 时会
-        // 注入 -l:libunwind.a（sysroot 没有），这里统一回 libgcc_eh（mingw 标准）。
-        if (family == "windows") {
-            bool user_unwind = false;
-            for (auto& a : args) user_unwind = user_unwind || a.rfind("-unwindlib", 0) == 0;
-            if (!user_unwind) cmd.push_back("-unwindlib=libgcc");
-        }
-
-        // 默认静态/PIE：
-        //   musl 默认全静态；glibc 默认 PIE；wasi 天然全静态；windows 不加。
+        // 默认静态/PIE：musl 默认全静态；glibc 默认 PIE；wasi 天然全静态。
         bool nostdlib = has_flag(args, {"-nostdlib"});
         if (spec->statik && family != "wasi" &&
             !has_flag(args, {"-shared", "-static", "-nostdlib"}))
             cmd.push_back("-static");
         if (spec->pie && !has_flag(args, {"-shared", "-static", "-no-pie", "-nopie"}))
             cmd.push_back("-pie");
-        if (family == "windows" && !nostdlib &&
-            !has_flag(args, {"-static-libgcc", "-static-libstdc++", "-shared"})) {
-            cmd.push_back("-static-libgcc");
-            cmd.push_back("-static-libstdc++");
-        }
 
         cmd.push_back("-Qunused-arguments");
     }
@@ -673,12 +655,6 @@ static std::vector<std::string> build_command(const std::string& role,
         !has_flag(args, {"-nostdlib"}))
         cmd.push_back("-lc++abi");
 
-    // windows C++：Debian 的 libstdc++ 是 posix 线程变体，静态链接时需要
-    // libwinpthread.a（sysroot 自带）；放在 args 之后（clang 的 -lstdc++ 尾部之后）
-    if (role == "c++" && family == "windows" && is_link_step(args) &&
-        !has_flag(args, {"-nostdlib"}) &&
-        !has_flag(args, {"-lwinpthread", "-mwinpthread"}))
-        cmd.push_back("-lwinpthread");
     return cmd;
 }
 

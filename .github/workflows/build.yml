@@ -5,7 +5,7 @@ name: build
 #   linux-x64       : apt clang（XCC_LLVM_DIR）+ 原生驱动
 #   linux-arm64     : ubuntu-24.04-arm 原生 runner，同上
 #   macos-arm64     : brew llvm（XCC_LLVM_DIR）+ 原生驱动
-# 所有 host 都做同一件事：采集 8 个 sysroot -> verify.py 全量回归 -> 打包 -> 包内冒烟测试。
+# 所有 host 都做同一件事：采集 sysroot -> xccverify 全量回归 -> 打包 -> 包内冒烟测试。
 # 驱动 = 底座 clang++ 现场编译 xcc.cpp（全静态），目标机零依赖。
 
 on:
@@ -19,7 +19,7 @@ permissions:
   contents: write   # 打 tag 时上传 Release 附件
 
 env:
-  TARGETS: "aarch64-linux-musl x86_64-linux-musl riscv64-linux-musl x86_64-w64-mingw32 i686-w64-mingw32 wasm32-wasi"
+  TARGETS: "aarch64-linux-musl x86_64-linux-musl riscv64-linux-musl wasm32-wasi"
 
 jobs:
   release:
@@ -32,6 +32,7 @@ jobs:
           - name: windows-x86_64
             os: windows-latest
             py: "3.12"
+            cxx: "C:/msys64/clang64/bin/clang++.exe"
           - name: linux-x64
             os: ubuntu-latest
           - name: linux-arm64
@@ -47,27 +48,46 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang lld llvm
+          sudo apt-get install -y clang lld llvm libcurl4-openssl-dev zlib1g-dev liblzma-dev zstd
           echo "XCC_LLVM_DIR=$(dirname $(dirname $(readlink -f $(which clang)))/clang)" >> $GITHUB_ENV
 
       - name: Install LLVM (macos)
         if: startsWith(matrix.os, 'macos')
         run: |
-          brew install llvm lld
+          brew install llvm lld xz
           echo "XCC_LLVM_DIR=$(brew --prefix llvm)" >> $GITHUB_ENV
 
-      # ---- sysroot 采集 ----
+      # 采集器是 C++ 程序，Windows 上需要 MinGW 工具链（MSVC 版 clang 拿不到 zlib/liblzma 静态库）
+      - name: Install MinGW toolchain (windows)
+        if: matrix.os == 'windows-latest'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: false
+          install: >-
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-zlib
+            mingw-w64-clang-x86_64-xz
+
+      # ---- 编译 C++ 工具 ----
+      - name: Build C++ tools
+        run: sh tools/build-tools.sh
+        shell: bash
+        env:
+          CXX: ${{ matrix.cxx }}
+
+      # ---- sysroot 采集（遵守 pins/*.json 锁定）----
       - name: Collect sysroots
         run: |
           for t in $TARGETS; do
-            echo "=== build_sysroot $t ==="
-            python tools/build_sysroot.py "$t"
+            echo "=== xccsysroot $t ==="
+            ./build/xccsysroot "$t"
           done
         shell: bash
 
       # ---- 全量回归 ----
       - name: Verify all targets
-        run: python tools/verify.py --all
+        run: ./build/xccverify --all
         shell: bash
 
       # ---- 打包 ----
@@ -91,13 +111,6 @@ jobs:
           xcc -print-targets
           xcc -target aarch64-linux-musl tests/hello.c -o smoke_a64.exe
           xcc++ -target wasm32-wasi tests/plain.cpp -o smoke_wasm.exe
-          # mingw 产物在 runner 上真机运行（x64 与 x86/WoW64）
-          xcc -target x86_64-w64-mingw32 tests/hello.c -o smoke_win64.exe
-          ./smoke_win64.exe
-          xcc -target i686-w64-mingw32 tests/hello.c -o smoke_win32.exe
-          ./smoke_win32.exe
-          xcc++ -target x86_64-w64-mingw32 tests/vector.cpp -o smoke_win64cpp.exe
-          ./smoke_win64cpp.exe
           echo "smoke ok"
 
       - name: Smoke test release (linux/macos)
