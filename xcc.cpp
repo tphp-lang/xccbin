@@ -422,6 +422,15 @@ static bool is_link_step(const std::vector<std::string>& args) {
     return !has_flag(args, {"-c", "-S", "-E", "-fsyntax-only"});
 }
 
+// 用户是否已显式指定 C++ 标准（避免驱动默认覆盖用户的 -std）
+static bool user_specified_std(const std::vector<std::string>& args) {
+    for (auto& a : args) {
+        if (a.rfind("-std=", 0) == 0) return true;   // -std=c++17
+        if (a == "-std") return true;                 // -std c++17（罕见，空格分隔）
+    }
+    return false;
+}
+
 // --------------------------------------------------------------------------
 // 路径探测
 // --------------------------------------------------------------------------
@@ -452,10 +461,20 @@ static fs::path find_root(const std::string& argv0) {
 }
 
 static fs::path find_llvm(const fs::path& root) {
+    // 安装版 <root>/lib/llvm、开发版 <root>/tools/llvm 优先
     for (const char* cand : {"lib/llvm", "tools/llvm"}) {
         fs::path p = root / cand / "bin";
         std::error_code ec;
         if (fs::is_directory(p, ec)) return root / cand;
+    }
+    // 用户/CI 显式指定的 LLVM 根目录（含 bin/clang 与资源目录），
+    // 例如 macOS 上的 brew llvm、Linux 上的 apt llvm-18。
+    // Apple clang 缺 RISC-V / WebAssembly 后端，macOS 必须走 brew llvm
+    // 才能编译/验证 riscv64 / wasm32；CI 早已 export XCC_LLVM_DIR，这里落实它。
+    if (const char* env = std::getenv("XCC_LLVM_DIR"); env && *env) {
+        fs::path p = upath(env);
+        std::error_code ec;
+        if (fs::is_directory(p / "bin", ec)) return p;
     }
     return fs::path();
 }
@@ -627,6 +646,12 @@ static std::vector<std::string> build_command(const std::string& role,
             }
         }
     }
+
+    // C++ 默认标准：宿主 clang 默认标准随版本不同（Apple clang 默认 gnu++98，
+    // 会导致 C++11+ 的初始化列表 / 范围 for 编译失败），统一锁到 gnu++17，
+    // 保证 musl / wasi 的 C++ 样例在各 host 上行为一致。用户显式 -std 时尊重用户。
+    if (role == "c++" && !user_specified_std(args))
+        cmd.push_back("-std=gnu++17");
 
     if (is_link_step(args)) {
         if (family == "wasi")

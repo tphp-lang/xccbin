@@ -53,7 +53,13 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: |
           brew install llvm lld xz
-          echo "XCC_LLVM_DIR=$(brew --prefix llvm)" >> $GITHUB_ENV
+          LLVM_PREFIX=$(brew --prefix llvm)
+          echo "XCC_LLVM_DIR=$LLVM_PREFIX" >> "$GITHUB_ENV"
+          # brew 的 llvm / lld 默认不进 PATH；clang 链接 musl / wasm 时需要
+          # ld.lld / wasm-ld，故把两者的 bin 显式加入 PATH。驱动本身通过
+          # XCC_LLVM_DIR 定位 clang，PATH 仅用于 ld.lld 等链接器探测。
+          echo "$LLVM_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix lld)/bin" >> "$GITHUB_PATH"
 
       # 采集器是 C++ 程序，Windows 上需要 MinGW 工具链（MSVC 版 clang 拿不到 zlib/liblzma 静态库）
       - name: Install MinGW toolchain (windows)
