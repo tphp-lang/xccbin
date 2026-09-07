@@ -1,7 +1,19 @@
 {
   "branch": "latest-stable",
   "items": [
-    {"key": "wasi-sysroot", "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-25/wasi-sysroot-25.0.tar.gz", "file": "wasi-sysroot-25.0.tar.gz", "version": "wasi-sdk-25", "sha256": "d09c62c18efcddffe4b2fdd8c5830109cc8e36130cdbc9acdc0bd1b204c942bb"},
-    {"key": "wasm-builtins", "url": "https://deb.debian.org/debian/pool/main/l/llvm-toolchain-22/libclang-rt-22-dev-wasm32_22.1.8-1~deb13u4_all.deb", "file": "libclang-rt-22-dev-wasm32_22.1.8-1~deb13u4_all.deb", "version": "", "sha256": "3d80694cb5d1ef643924ee4b1540e364f231abbd720b6e587068aaca653701da"}
+    {
+      "key": "wasi-sysroot",
+      "url": "https://github.com/tphp-lang/xccbin/releases/download/sysroot-cache/wasi-sysroot-25.0.tar.gz",
+      "file": "wasi-sysroot-25.0.tar.gz",
+      "version": "wasi-sdk-25",
+      "sha256": "d09c62c18efcddffe4b2fdd8c5830109cc8e36130cdbc9acdc0bd1b204c942bb"
+    },
+    {
+      "key": "wasm-builtins",
+      "url": "https://github.com/tphp-lang/xccbin/releases/download/sysroot-cache/libclang-rt-22-dev-wasm32_22.1.8-1.deb13u4_all.deb",
+      "file": "libclang-rt-22-dev-wasm32_22.1.8-1~deb13u4_all.deb",
+      "version": "",
+      "sha256": "3d80694cb5d1ef643924ee4b1540e364f231abbd720b6e587068aaca653701da"
+    }
   ]
 }

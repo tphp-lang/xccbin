@@ -1,10 +1,40 @@
 {
   "branch": "latest-stable",
   "items": [
-    {"key": "musl-dev", "url": "https://mirrors.aliyun.com/alpine/latest-stable/main/aarch64/musl-dev-1.2.6-r2.apk", "file": "aarch64-musl-dev-1.2.6-r2.apk", "version": "1.2.6-r2", "sha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"},
-    {"key": "musl", "url": "https://mirrors.aliyun.com/alpine/latest-stable/main/aarch64/musl-1.2.6-r2.apk", "file": "aarch64-musl-1.2.6-r2.apk", "version": "1.2.6-r2", "sha256": "5e9674b7f41152fe2119093b5cb4c13eaaadb19c2d5422b2d7267913e663ee6e"},
-    {"key": "libstdc++-dev", "url": "https://mirrors.aliyun.com/alpine/latest-stable/main/aarch64/libstdc++-dev-15.2.0-r5.apk", "file": "aarch64-libstdc++-dev-15.2.0-r5.apk", "version": "15.2.0-r5", "sha256": "8385c811d93b64ee1877005a5473cde8ebabe82d346301f2b153ff8cb6a71510"},
-    {"key": "libgcc-static", "url": "https://mirrors.aliyun.com/alpine/latest-stable/main/aarch64/libgcc-static-15.2.0-r5.apk", "file": "aarch64-libgcc-static-15.2.0-r5.apk", "version": "15.2.0-r5", "sha256": "2ec3dc4be953d842cc51193248367d86829ed699a1ed094fb5149b1b3fc62919"},
-    {"key": "gcc", "url": "https://mirrors.aliyun.com/alpine/latest-stable/main/aarch64/gcc-15.2.0-r5.apk", "file": "aarch64-gcc-15.2.0-r5.apk", "version": "15.2.0-r5", "sha256": "ff3fecfc32c9a1bed4a47a32ccfee6f6f575708258f912c218dce8ed0d892221"}
+    {
+      "key": "musl-dev",
+      "url": "https://github.com/tphp-lang/xccbin/releases/download/sysroot-cache/aarch64-musl-dev-1.2.6-r2.apk",
+      "file": "aarch64-musl-dev-1.2.6-r2.apk",
+      "version": "1.2.6-r2",
+      "sha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "key": "musl",
+      "url": "https://github.com/tphp-lang/xccbin/releases/download/sysroot-cache/aarch64-musl-1.2.6-r2.apk",
+      "file": "aarch64-musl-1.2.6-r2.apk",
+      "version": "1.2.6-r2",
+      "sha256": "5e9674b7f41152fe2119093b5cb4c13eaaadb19c2d5422b2d7267913e663ee6e"
+    },
+    {
+      "key": "libstdc++-dev",
+      "url": "https://github.com/tphp-lang/xccbin/releases/download/sysroot-cache/aarch64-libstdc++-dev-15.2.0-r5.apk",
+      "file": "aarch64-libstdc++-dev-15.2.0-r5.apk",
+      "version": "15.2.0-r5",
+      "sha256": "8385c811d93b64ee1877005a5473cde8ebabe82d346301f2b153ff8cb6a71510"
+    },
+    {
+      "key": "libgcc-static",
+      "url": "https://github.com/tphp-lang/xccbin/releases/download/sysroot-cache/aarch64-libgcc-static-15.2.0-r5.apk",
+      "file": "aarch64-libgcc-static-15.2.0-r5.apk",
+      "version": "15.2.0-r5",
+      "sha256": "2ec3dc4be953d842cc51193248367d86829ed699a1ed094fb5149b1b3fc62919"
+    },
+    {
+      "key": "gcc",
+      "url": "https://github.com/tphp-lang/xccbin/releases/download/sysroot-cache/aarch64-gcc-15.2.0-r5.apk",
+      "file": "aarch64-gcc-15.2.0-r5.apk",
+      "version": "15.2.0-r5",
+      "sha256": "ff3fecfc32c9a1bed4a47a32ccfee6f6f575708258f912c218dce8ed0d892221"
+    }
   ]
 }

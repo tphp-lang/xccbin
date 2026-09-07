@@ -9,12 +9,7 @@ name: mirror-cache
 # pins/*.json 的 url 切换在镜像 Release 存在之后单独提交，避免竞态。
 
 on:
-  workflow_dispatch:
-  push:
-    paths:
-      - 'pins/**'
-      - 'tools/mirror_cache.py'
-      - '.github/workflows/mirror-cache.yml'
+  workflow_dispatch:   # 仅手动触发：镜像已就绪，pins 更新时按需手动刷新
 
 permissions:
   contents: write   # 创建 Release 并上传资产
