@@ -1,4 +1,4 @@
-# xcc — 类 zig cc 的一站式交叉编译工具链
+# xcc — 一站式交叉编译工具链
 
 一条命令交叉编译 C/C++，开箱即用。单文件原生 C++ 驱动，无 Python、无运行时依赖：
 
@@ -36,8 +36,9 @@ tools/
   xccsysroot.cpp     sysroot 采集器（单文件 C++17：自实现 ar/tar 解析 + zlib/lzma 解压）
   xccverify.cpp      产物验证器（单文件 C++17：架构/静态自洽/指令集/C++ 符号/PE 真机运行）
   build-tools.sh     编译 C++ 工具（build/xccsysroot + build/xccverify + build/xccrelease）
-  xccrelease.cpp     发行包构建器（原生 C++17，替代 make_release.py；CI 实际打包用）
+  xccrelease.cpp     发行包构建器（原生 C++17，取代旧 make_release.py；CI 实际打包用）
   probe_alpine.py    Alpine 仓库索引探测
+  mirror_cache.py     CI 镜像缓存辅助（刻意保留 Python）
 pins/<target>.json   采集锁定（确切 URL + 版本 + sha256，**进 git**；当前 4 个 target 各一份）
 sysroot/<target>/    已采集 sysroot（含 xcc.json manifest；**gitignored，由 pins + xccsysroot 重建**）
 tests/               hello.c / vector.cpp / plain.cpp 测试样例
@@ -129,12 +130,18 @@ sh tools/build-tools.sh              # 编译 C++ 采集器 -> build/xccsysroot
 注意：LLVM 官方 22.x 只发 Windows 预编译资产，Linux/macOS 底座必须来自发行版包。
 push tag `v*` 时各 host 的 zip 自动挂到 GitHub Release。
 
+发行包体积：Windows 约 600MB（官方 LLVM 静态链接，每个 exe 自包含；已从白名单剔除
+`clang++`/`lld`/`lld-link` 等冗余工具，省约 240MB），Linux/macOS 约 200MB（动态链接，共享 `.so`）。
+
 ## 已知边界
 
 - 底座 clang 随包分发（Windows 为官方包，Linux/macOS 为发行版包）
+- **Windows 官方 LLVM 未编 zlib**：打包时 `xccrelease` 用底座（MSYS2 clang64）的
+  `llvm-objcopy` 预解压 sysroot 内 ELF 压缩调试段，否则无 zlib 的 `ld.lld` 链接会报
+  `ELFCOMPRESS_ZLIB`；wasm 的 LLVM bitcode 文件（非 ELF）自动跳过
 - **构建链路已 C++ 化**：`tools/xccsysroot.cpp`、`tools/xccverify.cpp`、`tools/xccrelease.cpp`
   均为单文件、无 Python 依赖；仅 `probe_alpine.py` 仍是 Python（仓库索引探测，非打包必需）
-- 打包器 `xccrelease` 已接入 `build.yml` 完全取代旧 `make_release.py`（后者已废弃，待删除）
+- 打包器 `xccrelease` 已接入 `build.yml`，旧 `make_release.py` 已删除
 - 采集器解压 gzip/xz 用 zlib/liblzma；`.zst`（Debian 的 data.tar.zst）默认调外部
   `zstd -dc`，没装会明确报错，也可用 `-DXCC_USE_LIBZSTD -lzstd` 静态链
 - 非 Windows target 缺 compiler-rt builtins 时自动回退 `-rtlib=libgcc -unwindlib=libgcc`；
