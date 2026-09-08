@@ -198,11 +198,22 @@ jobs:
           echo "smoke ok"
 
       # ---- 产物 ----
+      # 注意：xccrelease 已把发行包打成 dist/xcc-<tag>.zip；若此处直接
+      # path: dist/*.zip，upload-artifact 会把该 zip 再包一层 -> 压缩包套压缩包
+      # （嵌套压缩）。故只上传解压后的 dist/xcc-<tag>/ 目录，由 upload-artifact
+      # 一次性压缩，避免嵌套。Release 上传仍用 dist/*.zip（单一交付物）。
+      - name: Locate package dir
+        id: pkg
+        run: |
+          d=$(find dist -maxdepth 1 -type d -name 'xcc-*' | head -1)
+          echo "dir=$d" >> "$GITHUB_OUTPUT"
+        shell: bash
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: xcc-${{ matrix.name }}
-          path: dist/*.zip
+          path: ${{ steps.pkg.outputs.dir }}
 
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
