@@ -11,8 +11,10 @@ name: build
 # 两点提速/纠偏（2026-09-08）：
 #   1) Collect 加 actions/cache 缓存 cache/ + sysroot/（按 pins 哈希，精确命中），
 #      xccsysroot 对"已采集"的 target 直接跳过，windows 上不再每次重下重解包（曾 13 分钟）。
-#   2) Windows 的 Verify 之前先 --fetch-llvm 拉官方 LLVM 并注入 PATH/XCC_LLVM_DIR；
-#      否则 verify 的 xccverify 会误用 MSVC 自带 clang 编驱动，必然失败。
+#   2) Windows 的 Verify 复用 release 已用 MinGW clang 编好的原生驱动
+#      （复制到 build/xcc.exe），并把官方 LLVM 注入 PATH/XCC_LLVM_DIR；
+#      否则 xccverify 会现场用官方 LLVM clang（Windows 走 MSVC 目标、缺链接器）
+#      重编驱动，必然失败。
 
 on:
   push:
@@ -144,13 +146,17 @@ jobs:
         shell: bash
 
       # ---- Windows verify 需要官方 LLVM 作底座：导出刚打包的 LLVM 到 PATH/XCC_LLVM_DIR ----
-      # 否则 xccverify 会误用 MSVC 自带 clang 现场编译 xcc.cpp（驱动），必然失败。
+      # 同时复用 release 已用 MinGW clang 编好的原生驱动（复制到 build/xcc.exe），
+      # 否则 xccverify 会现场用官方 LLVM clang（Windows 走 MSVC 目标、bash 下缺链接器）
+      # 重编 xcc.cpp 驱动，必然失败。验证阶段的 llvm-nm/llvm-readobj 与驱动运行时
+      # 交叉编译仍走官方 LLVM。
       - name: Export LLVM for verify (windows)
         if: matrix.os == 'windows-latest'
         run: |
           LLVM_DIR="$PWD/dist/xcc-win64/lib/llvm"
           echo "XCC_LLVM_DIR=$LLVM_DIR" >> "$GITHUB_ENV"
           echo "$LLVM_DIR/bin" >> "$GITHUB_PATH"
+          cp -f "$PWD/dist/xcc-win64/bin/xcc.exe" "$PWD/build/xcc.exe"
         shell: bash
 
       # ---- 全量回归 ----
