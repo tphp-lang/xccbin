@@ -782,9 +782,11 @@ static std::string exe_suffix_for(const std::string& system) {
 static const char* LLVM_VERSION = "22.1.8";
 
 static std::string llvm_fetch_url(const std::string& tag) {
-    std::string sys = tag.substr(0, tag.find('-'));
-    std::string arch = (tag == "win64") ? "x86_64" : "aarch64";
-    if (sys != "windows") return "";
+    // 仅 Windows 提供官方预编译 tar.xz 资产（tag 固定为 "win64"）。
+    // 注意 tag 本身没有 '-' 分隔，不能靠前缀判断系统，否则 "win64" 会被
+    // 误判成 sys="win64" != "windows" 而返回空串 -> die。
+    if (tag != "win64") return "";
+    const char* arch = "x86_64";
     return std::string("https://github.com/llvm/llvm-project/releases/download/llvmorg-") +
            LLVM_VERSION + "/clang+llvm-" + LLVM_VERSION + "-" + arch + "-pc-windows-msvc.tar.xz";
 }
@@ -1095,8 +1097,11 @@ static void zip_dir(const fs::path& dir, const fs::path& zippath, const std::str
     std::error_code ec;
     ZipWriter zw;
     if (!zw.open(zippath)) die("无法创建 " + pathstr(zippath));
+    // 相对 dir 的父目录打包，使 zip 内含顶层目录（xcc-<tag>/），与三端
+    // smoke test 的约定一致（解压后 smoketest/xcc-<tag>/bin 存在）。
+    fs::path base = dir.parent_path();
     for (fs::recursive_directory_iterator it(dir, ec), end; it != end; it.increment(ec)) {
-        std::string rel = pathstr(fs::relative(it->path(), dir, ec));
+        std::string rel = pathstr(fs::relative(it->path(), base, ec));
         std::replace(rel.begin(), rel.end(), '\\', '/');
         if (fs::is_directory(it->path(), ec)) {
             zw.add_entry(rel, nullptr, true, mode_of(it->path(), true, system));

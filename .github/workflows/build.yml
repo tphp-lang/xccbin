@@ -57,7 +57,7 @@ jobs:
           # 落位到资源目录（驱动持有跨版本 4 布局知识，不放 CI 重复）。
           # CI 是一次性环境，放开写权限无安全顾虑。
           sudo chmod -R a+w "$(clang -print-resource-dir)"
-          echo "XCC_LLVM_DIR=$(dirname $(dirname $(readlink -f $(which clang)))/clang)" >> $GITHUB_ENV
+          echo "XCC_LLVM_DIR=$(dirname $(dirname $(readlink -f $(which clang))))" >> "$GITHUB_ENV"
         shell: bash
 
       - name: Install LLVM (macos)
