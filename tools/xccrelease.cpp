@@ -1000,6 +1000,34 @@ static size_t copy_tree(const fs::path& src, const fs::path& dst, const std::str
     return n;
 }
 
+// 官方 Windows LLVM 的 ld.lld 未编入 zlib，无法读取 Alpine musl 产出的
+// ELFCOMPRESS_ZLIB 压缩调试段（链接报 "not built with zlib support"）。
+// 发行包面向 Windows 用户，必须把 sysroot 内 ELF 的压缩调试段解压，
+// 使其可被无 zlib 的 lld 链接。用底座自带 llvm-objcopy 处理（自动递归 .a 成员）。
+static void decompress_sysroot_debug(const fs::path& root, const fs::path& llvm_bin,
+                                     const std::string& exe_suffix) {
+    fs::path objcopy = llvm_bin / upath(std::string("llvm-objcopy") + exe_suffix);
+    if (!fs::is_regular_file(objcopy)) {
+        std::string w = which("llvm-objcopy");
+        if (!w.empty()) objcopy = upath(w);
+    }
+    if (!fs::is_regular_file(objcopy)) {
+        rlog("  ! 未找到 llvm-objcopy，跳过调试段解压（Windows 链接可能失败）");
+        return;
+    }
+    size_t n = 0, failed = 0;
+    std::error_code ec;
+    for (fs::recursive_directory_iterator it(root, ec), end; it != end; it.increment(ec)) {
+        if (fs::is_directory(it->path(), ec)) continue;
+        std::string ext = it->path().extension().string();
+        if (ext != ".o" && ext != ".a" && ext != ".so" && ext != ".obj") continue;
+        ExecResult r = exec_cmd({ pathstr(objcopy), "--decompress-debug-sections", pathstr(it->path()) }, 60000);
+        if (r.spawned && r.code == 0) n++;
+        else { failed++; rlogf("  ! llvm-objcopy 失败: %s", pathstr(it->path()).c_str()); }
+    }
+    rlogf("  解压 sysroot 调试段 (Windows lld 兼容): %zu 个文件, %zu 失败", n, failed);
+}
+
 // --------------------------------------------------------------------------
 // 原生驱动：14 个角色各自独立编译
 // --------------------------------------------------------------------------
@@ -1239,6 +1267,10 @@ int main(int argc, char** argv) {
         }
     }
     rlogf("复制 sysroot: %zu 个 target", n);
+    // 官方 Windows LLVM 的 ld.lld 无 zlib，无法读 sysroot 内 ELFCOMPRESS_ZLIB
+    // 压缩调试段。仅 Windows 发行包需要解压（Linux/macOS 的 lld 自带 zlib，链接正常）。
+    if (host.system == "windows")
+        decompress_sysroot_debug(sysroot_dst, base / "bin", exe_suffix);
     place_wasm_builtins(llvm_dst, sysroot_dst);
 
     rlog("=== 4/4 写入口与压缩 ===");

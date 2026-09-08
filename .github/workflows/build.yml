@@ -159,6 +159,19 @@ jobs:
           cp -f "$PWD/dist/xcc-win64/bin/xcc.exe" "$PWD/build/xcc.exe"
         shell: bash
 
+      # ---- Windows 官方 LLVM 的 ld.lld 未编 zlib，无法读 sysroot 内
+      # ELFCOMPRESS_ZLIB 压缩调试段（x86_64 musl 的 libc.a/crtn.o 触发
+      # "not built with zlib support"）。用刚打包的官方 LLVM 的 llvm-objcopy
+      # 解压 sysroot 内所有 ELF 的压缩调试段（自动递归 .a 成员），供后续
+      # verify / 冒烟链接使用。仅 Windows 需要（Linux/macOS 的 lld 自带 zlib）。
+      - name: Decompress sysroot debug (windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          OBJCOPY="$PWD/dist/xcc-win64/lib/llvm/bin/llvm-objcopy.exe"
+          find sysroot -type f \( -name '*.o' -o -name '*.a' -o -name '*.so' \) \
+            -exec "$OBJCOPY" --decompress-debug-sections {} +
+        shell: bash
+
       # ---- 全量回归 ----
       - name: Verify all targets
         run: |
