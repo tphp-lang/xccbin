@@ -178,6 +178,10 @@ jobs:
         run: |
           python -c "import zipfile,os; zipfile.ZipFile('dist/$(ls dist | grep -E "^xcc-.*\.zip$" | head -1)').extractall('smoketest')"
           d=$(find smoketest -maxdepth 1 -type d -name "xcc-*" | head -1)
+          # Python 3.14 的 extractall 默认 filter='data' 会剥离 zip 内 Unix 权限位，
+          # 导致 bin/xcc、lib/llvm/bin/* 等失去执行位而 "Permission denied"。
+          # 显式补回执行权限（Windows 包靠 .exe 扩展名不受影响）。
+          find "$d" -type f \( -path '*/bin/*' -o -name '*.sh' \) -exec chmod +x {} + || true
           export PATH="$PWD/$d/bin:$PATH"
           xcc -print-targets
           xcc -target aarch64-linux-musl tests/hello.c -o smoke_a64
