@@ -164,12 +164,14 @@ jobs:
       # "not built with zlib support"）。用刚打包的官方 LLVM 的 llvm-objcopy
       # 解压 sysroot 内所有 ELF 的压缩调试段（自动递归 .a 成员），供后续
       # verify / 冒烟链接使用。仅 Windows 需要（Linux/macOS 的 lld 自带 zlib）。
+      # 注意：llvm-objcopy 只接受「单个输入文件」，故 -exec 必须用 \; 逐文件执行，
+      # 不能用 +（会把所有匹配文件一次性塞进同一调用，报 too many positional arguments）。
       - name: Decompress sysroot debug (windows)
         if: matrix.os == 'windows-latest'
         run: |
           OBJCOPY="$PWD/dist/xcc-win64/lib/llvm/bin/llvm-objcopy.exe"
           find sysroot -type f \( -name '*.o' -o -name '*.a' -o -name '*.so' \) \
-            -exec "$OBJCOPY" --decompress-debug-sections {} +
+            -exec "$OBJCOPY" --decompress-debug-sections {} \;
         shell: bash
 
       # ---- 全量回归 ----
