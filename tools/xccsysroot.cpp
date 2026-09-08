@@ -1344,6 +1344,15 @@ int main(int argc, char** argv) {
             if (pins.branch.empty()) pins.branch = "latest-stable";
             if (!pins.loaded || !branch.empty()) pins_save(pins);
 
+            // 已采集则跳过：CI 用 actions/cache 恢复 sysroot/ 后此分支命中，
+            // 避免每次重下 + 重解包（APK 含大量小文件，NTFS 上曾耗时 13 分钟）。
+            // pins 一旦变更，缓存键随之失效、强制重采，可复现性不受影响；
+            // 本地想强制重采用 --update，或直接删 sysroot/<target>。
+            if (!update && fs::is_regular_file(SYSROOT / t / "xcc.json", ec)) {
+                xlog("已采集，跳过: sysroot/" + t + "/xcc.json 已存在");
+                continue;
+            }
+
             xlog("=== " + t + " ===");
             if (it->second.family == "musl") build_musl(t, it->second, pins);
             else if (it->second.family == "wasi") build_wasi(t, it->second, pins);

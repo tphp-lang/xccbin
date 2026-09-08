@@ -7,6 +7,12 @@ name: build
 #   macos-arm64     : brew llvm（XCC_LLVM_DIR）+ 原生驱动
 # 所有 host 都做同一件事：采集 sysroot -> xccverify 全量回归 -> 打包 -> 包内冒烟测试。
 # 驱动 = 底座 clang++ 现场编译 xcc.cpp（全静态），目标机零依赖。
+#
+# 两点提速/纠偏（2026-09-08）：
+#   1) Collect 加 actions/cache 缓存 cache/ + sysroot/（按 pins 哈希，精确命中），
+#      xccsysroot 对"已采集"的 target 直接跳过，windows 上不再每次重下重解包（曾 13 分钟）。
+#   2) Windows 的 Verify 之前先 --fetch-llvm 拉官方 LLVM 并注入 PATH/XCC_LLVM_DIR；
+#      否则 verify 的 xccverify 会误用 MSVC 自带 clang 编驱动，必然失败。
 
 on:
   push:
@@ -52,6 +58,7 @@ jobs:
           # CI 是一次性环境，放开写权限无安全顾虑。
           sudo chmod -R a+w "$(clang -print-resource-dir)"
           echo "XCC_LLVM_DIR=$(dirname $(dirname $(readlink -f $(which clang)))/clang)" >> $GITHUB_ENV
+        shell: bash
 
       - name: Install LLVM (macos)
         if: startsWith(matrix.os, 'macos')
@@ -64,6 +71,7 @@ jobs:
           # XCC_LLVM_DIR 定位 clang，PATH 仅用于 ld.lld 等链接器探测。
           echo "$LLVM_PREFIX/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix lld)/bin" >> "$GITHUB_PATH"
+        shell: bash
 
       # 采集器是 C++ 程序，Windows 上需要 MinGW 工具链（MSVC 版 clang 拿不到 zlib/liblzma 静态库）
       - name: Install MinGW toolchain (windows)
@@ -92,6 +100,18 @@ jobs:
         run: sh tools/build-tools.sh
         shell: bash
 
+      # ---- 下载/解包缓存 ----
+      # 把 cache/（锁定包）与 sysroot/（已解包）按 pins 哈希缓存，
+      # 避免每次 CI 重新下载 + NTFS 上大量小文件解包（windows 上曾耗时 13 分钟）。
+      # 仅精确命中（不给 restore-keys）：pins 一变即失效、强制重采，保证可复现。
+      - name: Cache sysroot
+        uses: actions/cache@v4
+        with:
+          path: |
+            cache
+            sysroot
+          key: sysroot-${{ runner.os }}-${{ hashFiles('pins/**') }}
+
       # ---- sysroot 采集（遵守 pins/*.json 锁定）----
       # 二进制名探测：windows 上是 build/xccsysroot.exe（MINGW 产出），其余平台无后缀。
       # 显式相对路径不触发 msys2 的 .exe 自动补全，故这里实测后缀，避免 127。
@@ -104,14 +124,9 @@ jobs:
           done
         shell: bash
 
-      # ---- 全量回归 ----
-      - name: Verify all targets
-        run: |
-          B=./build/xccverify; [ -x "$B.exe" ] && B="$B.exe"
-          "$B" --all
-        shell: bash
-
       # ---- 打包（原生 C++ 构建器，替代旧 make_release.py）----
+      # Windows 先 --fetch-llvm 拉官方 LLVM：它既是发行底座，也是 verify 步骤需要的 clang。
+      # 之后 Export LLVM 把它注入 PATH / XCC_LLVM_DIR。
       - name: Build release (windows, fetch official LLVM)
         if: matrix.os == 'windows-latest'
         run: |
@@ -124,6 +139,23 @@ jobs:
         run: |
           B=./build/xccrelease; [ -x "$B.exe" ] && B="$B.exe"
           "$B"
+        shell: bash
+
+      # ---- Windows verify 需要官方 LLVM 作底座：导出刚打包的 LLVM 到 PATH/XCC_LLVM_DIR ----
+      # 否则 xccverify 会误用 MSVC 自带 clang 现场编译 xcc.cpp（驱动），必然失败。
+      - name: Export LLVM for verify (windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          LLVM_DIR="$PWD/dist/xcc-win64/lib/llvm"
+          echo "XCC_LLVM_DIR=$LLVM_DIR" >> "$GITHUB_ENV"
+          echo "$LLVM_DIR/bin" >> "$GITHUB_PATH"
+        shell: bash
+
+      # ---- 全量回归 ----
+      - name: Verify all targets
+        run: |
+          B=./build/xccverify; [ -x "$B.exe" ] && B="$B.exe"
+          "$B" --all
         shell: bash
 
       # ---- 包内冒烟测试（干净 PATH，解压即用） ----
