@@ -160,22 +160,10 @@ jobs:
         shell: bash
 
       # ---- Windows 官方 LLVM 的 ld.lld 未编 zlib，无法读 sysroot 内
-      # ELFCOMPRESS_ZLIB 压缩调试段（x86_64 musl 的 libc.a/crtn.o 触发
-      # "not built with zlib support"）。xccrelease 在「Build release」里已用
-      # C++ 直接调 llvm-objcopy 把源码 sysroot 解压（路径走 Windows 原生 wstring，
-      # 不依赖 shell 翻译，且逐文件查退出码）。这里再兜底扫一遍，确保万无一失。
-      # 注意：原生 llvm-objcopy.exe 不认 POSIX 路径（/d/a/...），必须经 cygpath -w
-      # 转成 Windows 路径；且 find -exec 不传播子命令退出码，故用显式循环 + 失败即退出。
-      - name: Decompress sysroot debug (windows)
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          OBJCOPY=$(cygpath -w "$PWD/dist/xcc-win64/lib/llvm/bin/llvm-objcopy.exe")
-          fail=0
-          while IFS= read -r f; do
-            "$OBJCOPY" --decompress-debug-sections "$(cygpath -w "$f")" || { echo "FAIL: $f"; fail=1; }
-          done < <(find sysroot -type f \( -name '*.o' -o -name '*.a' -o -name '*.so' \))
-          [ "$fail" -eq 0 ] || exit 1
+      # ELFCOMPRESS_ZLIB 压缩调试段。该解压统一在「Build release」阶段由
+      # xccrelease 完成：它运行于 msys2 shell，优先选用 MSYS2 自带（带 zlib）的
+      # llvm-objcopy，逐文件解压并跳过 wasm 的 bitcode（非 ELF）文件，失败会大声报错。
+      # 因此此处不再另起独立解压步骤（之前用官方无-zlib objcopy 的步骤必失败）。
 
       # ---- 全量回归 ----
       - name: Verify all targets

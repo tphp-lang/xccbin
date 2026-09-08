@@ -1000,32 +1000,101 @@ static size_t copy_tree(const fs::path& src, const fs::path& dst, const std::str
     return n;
 }
 
+// 寻找一个「带 ELFCOMPRESS_ZLIB 压缩段」的 ELF 样本，用于 objcopy 能力测试。
+// musl 的 crt*.o 稳定带压缩调试段，且各 target 都会采集，必定存在。
+static fs::path find_compressed_sample(const fs::path& root) {
+    const char* rels[] = {
+        "x86_64-linux-musl/lib/crt1.o",
+        "aarch64-linux-musl/lib/crt1.o",
+        "riscv64-linux-musl/lib/crt1.o",
+        "x86_64-linux-musl/lib/Scrt1.o",
+    };
+    std::error_code ec;
+    for (const char* r : rels) {
+        fs::path p = root / r;
+        if (fs::is_regular_file(p, ec)) return p;
+    }
+    return fs::path();
+}
+
+// 选择「带 zlib」的 llvm-objcopy。官方 Windows LLVM 未编 zlib（objcopy 与 ld.lld
+// 都会报 "not built with zlib support"），只有 MSYS2 clang64 的 LLVM 带 zlib。
+// 候选优先 which(llvm-objcopy)（msys2 shell 下即 MSYS2 版），官方 base/bin 仅作
+// 最后兜底；每个候选都经能力测试（解压一个压缩 ELF 样本）确认带 zlib，否则换下一个。
+static fs::path pick_objcopy(const fs::path& llvm_bin, const std::string& exe_suffix,
+                              const fs::path& sample) {
+    std::vector<fs::path> cands;
+    std::string w = which("llvm-objcopy");
+    if (!w.empty()) cands.push_back(upath(w));
+    cands.push_back(llvm_bin / upath(std::string("llvm-objcopy") + exe_suffix));
+    std::error_code ec;
+    for (const fs::path& c : cands) {
+        if (!fs::is_regular_file(c, ec)) continue;
+        if (!sample.empty() && fs::is_regular_file(sample, ec)) {
+            fs::path tmp = sample.parent_path() / (sample.filename().string() + ".ztest");
+            fs::copy_file(sample, tmp, fs::copy_options::overwrite_existing, ec);
+            if (ec) continue;
+            ExecResult r = exec_cmd({ pathstr(c), "--decompress-debug-sections", pathstr(tmp) }, 60000);
+            fs::remove(tmp, ec);
+            if (r.spawned && r.code == 0) return c;                  // 带 zlib，可用
+            if (r.out.find("zlib") != std::string::npos ||
+                r.out.find("LLVM_ENABLE_ZLIB") != std::string::npos)
+                continue;                                            // 无 zlib，换下一个
+            return c;                                                // 其它错误（样本异常），仍用
+        }
+        return c;                                                    // 无样本：直接取首个存在者
+    }
+    return fs::path();
+}
+
 // 官方 Windows LLVM 的 ld.lld 未编入 zlib，无法读取 Alpine musl 产出的
 // ELFCOMPRESS_ZLIB 压缩调试段（链接报 "not built with zlib support"）。
 // 发行包面向 Windows 用户，必须把 sysroot 内 ELF 的压缩调试段解压，
-// 使其可被无 zlib 的 lld 链接。用底座自带 llvm-objcopy 处理（自动递归 .a 成员）。
+// 使其可被无 zlib 的 lld 链接。用「带 zlib」的 llvm-objcopy 处理（自动递归 .a 成员）。
+// 注意：wasm32-wasi 的 llvm-lto/*.o 是 LLVM bitcode（魔数 BC..），不是 ELF，
+// objcopy 报 "not a valid object file"；这类文件无需解压，按错误分类跳过。
 static void decompress_sysroot_debug(const fs::path& root, const fs::path& llvm_bin,
                                      const std::string& exe_suffix) {
-    fs::path objcopy = llvm_bin / upath(std::string("llvm-objcopy") + exe_suffix);
-    if (!fs::is_regular_file(objcopy)) {
-        std::string w = which("llvm-objcopy");
-        if (!w.empty()) objcopy = upath(w);
+    fs::path objcopy = pick_objcopy(llvm_bin, exe_suffix, find_compressed_sample(root));
+    if (objcopy.empty()) {
+        rlog("  ! 未找到可用的 llvm-objcopy，无法解压 sysroot 压缩调试段！");
+        rlog("  ! Windows 请确认已装 mingw-w64-clang-x86_64-clang（其 llvm-objcopy 带 zlib）；");
+        rlog("  ! 官方 llvm.org 的 Windows LLVM 未编 zlib，objcopy/ld.lld 都会失败。");
+        die("decompress_sysroot_debug: 缺少带 zlib 的 llvm-objcopy");
     }
-    if (!fs::is_regular_file(objcopy)) {
-        rlog("  ! 未找到 llvm-objcopy，跳过调试段解压（Windows 链接可能失败）");
-        return;
-    }
-    size_t n = 0, failed = 0;
+    rlogf("  解压工具: %s", pathstr(objcopy).c_str());
+    size_t n = 0, skipped = 0, failed = 0;
     std::error_code ec;
     for (fs::recursive_directory_iterator it(root, ec), end; it != end; it.increment(ec)) {
         if (fs::is_directory(it->path(), ec)) continue;
         std::string ext = it->path().extension().string();
         if (ext != ".o" && ext != ".a" && ext != ".so" && ext != ".obj") continue;
+        // 快速预筛：.o/.so/.obj 非 ELF（如 wasm llvm-lto 的 bitcode）直接跳过，
+        // 不必无谓调用 objcopy；.a 是归档（成员可能是 ELF 或 bitcode）留待 objcopy 分类。
+        if (ext == ".o" || ext == ".so" || ext == ".obj") {
+            std::ifstream f(pathstr(it->path()), std::ios::binary);
+            char magic[4] = {0, 0, 0, 0};
+            f.read(magic, 4);
+            if (!(magic[0] == '\x7f' && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F')) {
+                skipped++; continue;
+            }
+        }
         ExecResult r = exec_cmd({ pathstr(objcopy), "--decompress-debug-sections", pathstr(it->path()) }, 60000);
-        if (r.spawned && r.code == 0) n++;
-        else { failed++; rlogf("  ! llvm-objcopy 失败: %s", pathstr(it->path()).c_str()); }
+        if (r.spawned && r.code == 0) { n++; continue; }
+        // 错误分类：bitcode/非 ELF 无需解压 -> 跳过；无 zlib -> 致命；其它 -> 记录失败
+        if (r.out.find("not a valid object file") != std::string::npos ||
+            r.out.find("not recognized as a valid") != std::string::npos) {
+            skipped++; continue;
+        }
+        if (r.out.find("zlib") != std::string::npos ||
+            r.out.find("LLVM_ENABLE_ZLIB") != std::string::npos) {
+            die("objcopy 缺少 zlib 支持，无法解压压缩调试段: " + pathstr(objcopy));
+        }
+        failed++;
+        rlogf("  ! llvm-objcopy 失败(%d): %s", r.code, pathstr(it->path()).c_str());
     }
-    rlogf("  解压 sysroot 调试段 (Windows lld 兼容): %zu 个文件, %zu 失败", n, failed);
+    rlogf("  解压 sysroot 调试段: %zu 解压, %zu 跳过(非ELF/bitcode), %zu 失败", n, skipped, failed);
+    if (failed) die("decompress_sysroot_debug: 存在无法解压的文件");
 }
 
 // --------------------------------------------------------------------------
