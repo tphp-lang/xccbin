@@ -841,7 +841,7 @@ static fs::path fetch_llvm(const std::string& tag) {
 // 复制：LLVM 工具 / DLL 闭包 / 资源头 / sysroot
 // --------------------------------------------------------------------------
 static const char* LLVM_TOOLS[] = {
-    "clang", "clang++", "ld.lld", "lld-link", "wasm-ld", "lld",
+    "clang", "ld.lld", "wasm-ld",
     "llvm-ar", "llvm-ranlib", "llvm-nm", "llvm-objcopy", "llvm-strip",
     "llvm-readobj", "llvm-objdump", "llvm-readelf",
 };
