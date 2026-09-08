@@ -161,18 +161,21 @@ jobs:
 
       # ---- Windows 官方 LLVM 的 ld.lld 未编 zlib，无法读 sysroot 内
       # ELFCOMPRESS_ZLIB 压缩调试段（x86_64 musl 的 libc.a/crtn.o 触发
-      # "not built with zlib support"）。用刚打包的官方 LLVM 的 llvm-objcopy
-      # 解压 sysroot 内所有 ELF 的压缩调试段（自动递归 .a 成员），供后续
-      # verify / 冒烟链接使用。仅 Windows 需要（Linux/macOS 的 lld 自带 zlib）。
-      # 注意：llvm-objcopy 只接受「单个输入文件」，故 -exec 必须用 \; 逐文件执行，
-      # 不能用 +（会把所有匹配文件一次性塞进同一调用，报 too many positional arguments）。
+      # "not built with zlib support"）。xccrelease 在「Build release」里已用
+      # C++ 直接调 llvm-objcopy 把源码 sysroot 解压（路径走 Windows 原生 wstring，
+      # 不依赖 shell 翻译，且逐文件查退出码）。这里再兜底扫一遍，确保万无一失。
+      # 注意：原生 llvm-objcopy.exe 不认 POSIX 路径（/d/a/...），必须经 cygpath -w
+      # 转成 Windows 路径；且 find -exec 不传播子命令退出码，故用显式循环 + 失败即退出。
       - name: Decompress sysroot debug (windows)
         if: matrix.os == 'windows-latest'
-        run: |
-          OBJCOPY="$PWD/dist/xcc-win64/lib/llvm/bin/llvm-objcopy.exe"
-          find sysroot -type f \( -name '*.o' -o -name '*.a' -o -name '*.so' \) \
-            -exec "$OBJCOPY" --decompress-debug-sections {} \;
         shell: bash
+        run: |
+          OBJCOPY=$(cygpath -w "$PWD/dist/xcc-win64/lib/llvm/bin/llvm-objcopy.exe")
+          fail=0
+          while IFS= read -r f; do
+            "$OBJCOPY" --decompress-debug-sections "$(cygpath -w "$f")" || { echo "FAIL: $f"; fail=1; }
+          done < <(find sysroot -type f \( -name '*.o' -o -name '*.a' -o -name '*.so' \))
+          [ "$fail" -eq 0 ] || exit 1
 
       # ---- 全量回归 ----
       - name: Verify all targets

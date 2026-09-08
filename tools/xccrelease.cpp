@@ -1249,6 +1249,19 @@ int main(int argc, char** argv) {
     fs::path bin_dir = out / "bin";
     build_driver(bin_dir, host.system, exe_suffix, base, driver_clang);
 
+    // Windows：官方 LLVM 的 ld.lld 无 zlib，无法读 sysroot 内 ELFCOMPRESS_ZLIB
+    // 压缩调试段。CI 的 verify 与 Windows 本机用户都直接读仓库里的源 SYSROOT，
+    // 故在此把源码 sysroot 也一并解压（包内副本稍后由 copy_tree 自然继承）。
+    // 关键：解压走 C++ 调 llvm-objcopy（路径是 Windows 原生 wstring，经
+    // CreateProcessW 传给原生 exe），不依赖 shell 对原生程序的 POSIX 路径翻译——
+    // 否则像 build.yml 里 `find -exec objcopy {}` 那样把 /d/a/... 的 POSIX 路径
+    // 直接喂给原生 objcopy，会静默 "No such file" 而步骤仍返回 0，verify 读到
+    // 的仍是压缩段，报 ELFCOMPRESS_ZLIB。C++ 侧还逐文件检查退出码，失败会大声报错。
+    if (host.system == "windows" && fs::is_directory(SYSROOT, ec)) {
+        rlog("=== 解压源码 sysroot 调试段（Windows lld 兼容，verify 用）===");
+        decompress_sysroot_debug(SYSROOT, base / "bin", exe_suffix);
+    }
+
     rlog("=== 3/4 复制 sysroot ===");
     fs::path sysroot_dst = out / "sysroot";
     size_t n = 0;
