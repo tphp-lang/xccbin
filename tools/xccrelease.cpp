@@ -1004,18 +1004,27 @@ static size_t copy_tree(const fs::path& src, const fs::path& dst, const std::str
 // 原生驱动：14 个角色各自独立编译
 // --------------------------------------------------------------------------
 static void build_driver(const fs::path& dst_bin, const std::string& system,
-                         const std::string& exe_suffix, const fs::path& llvm_base) {
+                         const std::string& exe_suffix, const fs::path& llvm_base,
+                         const fs::path& driver_clang_arg) {
     std::error_code ec;
     fs::create_directories(dst_bin, ec);
     fs::path src = ROOT / "xcc.cpp";
     if (!fs::is_regular_file(src, ec)) die("找不到 " + pathstr(src));
 
-    fs::path clangxx = llvm_base / "bin" / upath(std::string("clang++") + exe_suffix);
-    if (!fs::is_regular_file(clangxx, ec)) {
-        std::string w = which("clang++");
-        if (w.empty()) w = which("clang");
-        if (w.empty()) die("找不到 clang++，无法编译驱动");
-        clangxx = upath(w);
+    // 驱动编译器：Windows 上优先用 MSYS2 clang（MinGW 目标），其 -static 产物自包含、
+    // 不依赖 MSVC 链接器；官方 LLVM clang 在 Windows 默认走 x86_64-pc-windows-msvc
+    // 目标，需要 MSVC 链接环境，CI 的 bash 下编驱动会失败。driver_clang_arg 仅 Windows 传入。
+    fs::path clangxx;
+    if (!driver_clang_arg.empty() && fs::is_regular_file(driver_clang_arg, ec)) {
+        clangxx = driver_clang_arg;
+    } else {
+        clangxx = llvm_base / "bin" / upath(std::string("clang++") + exe_suffix);
+        if (!fs::is_regular_file(clangxx, ec)) {
+            std::string w = which("clang++");
+            if (w.empty()) w = which("clang");
+            if (w.empty()) die("找不到 clang++，无法编译驱动");
+            clangxx = upath(w);
+        }
     }
 
     std::vector<std::string> flags = { "-std=c++17", "-O2", "-s" };
@@ -1183,6 +1192,22 @@ int main(int argc, char** argv) {
         die("LLVM 底座无效: " + pathstr(base));
     rlog("LLVM 底座来源: " + pathstr(base));
 
+    // Windows 驱动用 MSYS2 clang（MinGW）编译，解耦于打包用的官方 LLVM 底座：
+    // 官方 LLVM clang 在 Windows 走 MSVC 目标、缺 MSVC 链接环境会编驱动失败，
+    // 而 MinGW clang 的 -static 产物自包含。driver_clang 仅 Windows 有意义。
+    fs::path driver_clang;
+    if (host.system == "windows") {
+        fs::path m = find_msys2_clang64();
+        if (!m.empty()) driver_clang = m / "bin" / upath(std::string("clang++") + exe_suffix);
+        if (driver_clang.empty() || !fs::is_regular_file(driver_clang, ec)) {
+            std::string w = which("clang++");
+            if (w.empty()) w = which("clang");
+            if (!w.empty()) driver_clang = upath(w);
+        }
+        if (!driver_clang.empty())
+            rlog("驱动编译器: " + pathstr(driver_clang) + " (MinGW)");
+    }
+
     // ---- 输出目录 ----
     fs::path out = DIST / upath("xcc-" + host.tag);
     if (fs::exists(out, ec)) fs::remove_all(out, ec);
@@ -1194,7 +1219,7 @@ int main(int argc, char** argv) {
 
     rlog("=== 2/4 编译原生驱动 ===");
     fs::path bin_dir = out / "bin";
-    build_driver(bin_dir, host.system, exe_suffix, base);
+    build_driver(bin_dir, host.system, exe_suffix, base, driver_clang);
 
     rlog("=== 3/4 复制 sysroot ===");
     fs::path sysroot_dst = out / "sysroot";

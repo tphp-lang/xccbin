@@ -132,7 +132,9 @@ jobs:
         run: |
           B=./build/xccrelease; [ -x "$B.exe" ] && B="$B.exe"
           "$B" --fetch-llvm
-        shell: bash
+        # msys2 shell：驱动用 MSYS2 clang（MinGW）编译，which/clang64 路径才可靠；
+        # 官方 LLVM 仅作打包底座，其 clang 在 Windows 走 MSVC 目标、bash 下编驱动会失败。
+        shell: msys2 {0}
 
       - name: Build release (linux/macos)
         if: "!startsWith(matrix.os, 'windows')"
